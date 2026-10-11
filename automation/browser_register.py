@@ -452,48 +452,19 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     _human_type(page, code_field, code)
                     _human_pause(1.0, 2.0)
                     # Click Confirm, handle navigation as success
+                    # After OTP fill, click Continue -> profile opens automatically
                     try:
-                        confirm_btn = page.get_by_role("button", name="Confirm", exact=True)
-                        confirm_btn.wait_for(state="visible", timeout=15000)
+                        continue_btn = page.get_by_role("button", name="Continue", exact=True)
+                        continue_btn.wait_for(state="visible", timeout=15000)
                         with print_lock:
-                            print(f"{CYAN}[Browser] Found button: Confirm{WHITE}")
-                        # Click Confirm, then look for Continue button
-                        try:
-                            with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
-                                confirm_btn.click()
-                            navigated = True
-                        except Exception:
-                            # No navigation, try clicking Continue button
-                            _human_pause(2.0, 3.0)
-                            try:
-                                continue_btn = page.get_by_role("button", name="Continue", exact=True)
-                                continue_btn.wait_for(state="visible", timeout=10000)
-                                with print_lock:
-                                    print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
-                                with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
-                                    continue_btn.click()
-                                navigated = True
-                            except Exception as e2:
-                                with print_lock:
-                                    print(f"{YELLOW}[Browser] Continue not found: {e2}{WHITE}")
-                                # Check if we left confirm page anyway
-                                try:
-                                    if "confirmemail" not in page.url:
-                                        navigated = True
-                                except Exception:
-                                    pass
-                    except Exception as nav_e:
-                        # Check if we navigated anyway (success)
-                        try:
-                            cur = page.url
-                            if "confirmemail" not in cur and "checkpoint" not in cur:
-                                navigated = True
-                                with print_lock:
-                                    print(f"{GREEN}[Browser] Navigated after confirm: {cur}{WHITE}")
-                            else:
-                                navigated = False
-                        except Exception:
-                            navigated = False
+                            print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
+                        continue_btn.click()
+                        _human_pause(3.0, 5.0)
+                        navigated = True
+                    except Exception as e:
+                        with print_lock:
+                            print(f"{RED}[Browser] Continue click failed: {e}{WHITE}")
+                        navigated = False
                     _human_pause(2.0, 3.0)
 
                     # Check again for login
