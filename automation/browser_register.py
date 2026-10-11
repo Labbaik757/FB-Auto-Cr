@@ -457,10 +457,31 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         confirm_btn.wait_for(state="visible", timeout=15000)
                         with print_lock:
                             print(f"{CYAN}[Browser] Found button: Confirm{WHITE}")
-                        # Wait for navigation after click (success = leave confirm page)
-                        with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
-                            confirm_btn.click()
-                        navigated = True
+                        # Click Confirm, then look for Continue button
+                        try:
+                            with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
+                                confirm_btn.click()
+                            navigated = True
+                        except Exception:
+                            # No navigation, try clicking Continue button
+                            _human_pause(2.0, 3.0)
+                            try:
+                                continue_btn = page.get_by_role("button", name="Continue", exact=True)
+                                continue_btn.wait_for(state="visible", timeout=10000)
+                                with print_lock:
+                                    print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
+                                with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
+                                    continue_btn.click()
+                                navigated = True
+                            except Exception as e2:
+                                with print_lock:
+                                    print(f"{YELLOW}[Browser] Continue not found: {e2}{WHITE}")
+                                # Check if we left confirm page anyway
+                                try:
+                                    if "confirmemail" not in page.url:
+                                        navigated = True
+                                except Exception:
+                                    pass
                     except Exception as nav_e:
                         # Check if we navigated anyway (success)
                         try:
