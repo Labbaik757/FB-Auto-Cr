@@ -111,11 +111,14 @@ def _select_gender(page, gender):
 
 
 def _parse_number_entry(entry):
-    """Parse 'number|otp_url' format. Returns (number, otp_url or None)."""
+    """Parse 'number,url' or 'number|url' format. Returns (number, otp_url or None)."""
     entry = entry.strip()
-    if "|" in entry:
-        parts = entry.split("|", 1)
-        return parts[0].strip(), parts[1].strip()
+    if entry.startswith("#") or not entry:
+        return None, None
+    for sep in [",", "|"]:
+        if sep in entry:
+            parts = entry.split(sep, 1)
+            return parts[0].strip(), parts[1].strip()
     return entry, None
 
 
@@ -147,64 +150,32 @@ def _click_resend_twice(page):
     return clicked
 
 
-def _fetch_otp_from_url(page, sms_url, timeout=20):
+def _fetch_otp_from_url(page, sms_url, timeout=180, interval=5):
     """
-    Open SMS URL in a new tab and poll for OTP code.
-    Looks for 4-8 digit codes in page text, preferring Facebook SMS.
+    Fetch OTP via HTTP requests (simple API endpoint).
+    Response is plain text; 'no' prefix means no OTP yet.
     Returns the code or None.
     """
     import re
+    import requests
 
-    context = page.context
-    sms_page = context.new_page()
-    try:
-        sms_page.goto(sms_url, wait_until="domcontentloaded", timeout=30000)
-    except Exception:
-        pass
-
-    start = time.time()
-    seen_codes = set()
-    while time.time() - start < timeout:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
         try:
-            sms_page.reload(wait_until="domcontentloaded", timeout=15000)
+            r = requests.get(sms_url, timeout=15)
+            text = r.text.strip()
+            if text and not text.lower().startswith("no"):
+                # Try pipe format first: |CODE is your Facebook confirmation code|
+                m = re.search(r'\|(\d{4,8})\s+is your Facebook confirmation code', text)
+                if m:
+                    return m.group(1)
+                # Fallback: any 4-8 digit code
+                m = re.search(r"\d{4,8}", text)
+                if m:
+                    return m.group(0)
         except Exception:
             pass
-        time.sleep(3)
-
-        try:
-            text = sms_page.inner_text("body")
-        except Exception:
-            continue
-
-        # Format: yes|06221 is your Facebook confirmation code|(Facebook)|...
-        # Also handles generic: 4-8 digit code near "Facebook"
-        text_lower = text.lower()
-        if "facebook" in text_lower or "confirmation code" in text_lower:
-            # Try pipe-separated format first
-            pipe_match = re.search(r'\|(\d{4,8})\s+is your Facebook confirmation code', text)
-            if pipe_match:
-                sms_page.close()
-                return pipe_match.group(1)
-            # Fallback: any 4-8 digit code near Facebook mention
-            codes = re.findall(r'\b\d{4,8}\b', text)
-            for code in codes:
-                if code not in seen_codes:
-                    seen_codes.add(code)
-                    idx = text_lower.find("facebook")
-                    if idx == -1:
-                        idx = text_lower.find("confirmation")
-                    code_idx = text.find(code)
-                    if abs(code_idx - idx) < 200:
-                        sms_page.close()
-                        return code
-            if codes:
-                sms_page.close()
-                return codes[-1]
-
-    try:
-        sms_page.close()
-    except Exception:
-        pass
+        time.sleep(interval)
     return None
 
 
@@ -491,6 +462,8 @@ def run_browser_mode(numbers, password_config, counter=None):
         try:
             for idx, entry in enumerate(numbers, 1):
                 number, sms_url = _parse_number_entry(entry)
+                if not number:
+                    continue  # Skip empty/comment lines
                 with print_lock:
                     print(f"\n{LINE}")
                     print(f"{CYAN}[{idx}/{len(numbers)}] Processing {number}{WHITE}")
