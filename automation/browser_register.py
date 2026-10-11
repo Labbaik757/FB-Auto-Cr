@@ -366,30 +366,28 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 code = input(f"{CYAN}Code: {WHITE}").strip()
 
             if code.lower() != "skip" and code:
-                # Try to find code input and submit
+                # Fill OTP and confirm (per reference)
                 try:
-                    code_input = page.locator('input[id="code_in_cliff"], input[name="code"]')
-                    if code_input.count() > 0:
-                        _human_type(page, 'input[id="code_in_cliff"], input[name="code"]', code)
-                        _human_pause(1.0, 2.0)
-                        # Click continue/submit
-                        page.locator('button[type="submit"]').first.click()
-                        _human_pause(3.0, 5.0)
+                    page.get_by_text("confirmation code").wait_for(state="visible", timeout=15000)
+                    _human_type(page, page.get_by_label("confirmation code"), code)
+                    _human_pause(1.0, 2.0)
+                    page.get_by_role("button", name="Confirm").click()
+                    _human_pause(3.0, 5.0)
 
-                        # Check again for login
-                        cookies = page.context.cookies()
-                        c_user = next((c["value"] for c in cookies if c["name"] == "c_user"), None)
-                        if c_user:
-                            cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-                            if counter:
-                                counter.update("success")
-                            return {
-                                "status": "success",
-                                "uid": c_user,
-                                "password": password,
-                                "cookies": cookie_str,
-                                "result_line": f"{c_user}|{password}|{cookie_str}",
-                            }
+                    # Check again for login
+                    cookies = page.context.cookies()
+                    c_user = next((c["value"] for c in cookies if c["name"] == "c_user"), None)
+                    if c_user:
+                        cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
+                        if counter:
+                            counter.update("success")
+                        return {
+                            "status": "success",
+                            "uid": c_user,
+                            "password": password,
+                            "cookies": cookie_str,
+                            "result_line": f"{c_user}|{password}|{cookie_str}",
+                        }
                 except Exception as e:
                     with print_lock:
                         print(f"{RED}[Browser] Code submission error: {e}{WHITE}")
