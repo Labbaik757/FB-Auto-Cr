@@ -52,51 +52,38 @@ def _human_type(page, selector, text, min_delay=80, max_delay=250):
 
 
 def _select_birthday(page, day, month, year):
-    """Select birthday from dropdowns (positional: month, day, year)."""
-    selects = page.locator('select')
-    n = selects.count()
-    with print_lock:
-        print(f"{CYAN}[Browser] Found {n} dropdowns{WHITE}")
+    """Select birthday via custom comboboxes (click combobox, then option)."""
     ok = True
-    if n >= 3:
-        for idx, (label, value) in enumerate([(month, month), (str(day), str(day)), (str(year), str(year))]):
-            try:
-                selects.nth(idx).select_option(label=value)
-                # Verify selection
-                selected = selects.nth(idx).input_value()
-                with print_lock:
-                    print(f"{GREEN}[Browser] Dropdown {idx} set to {value} (actual: {selected}){WHITE}")
-                _human_pause(0.5, 1.0)
-            except Exception as e:
-                with print_lock:
-                    print(f"{RED}[Browser] Dropdown {idx} FAILED: {e}{WHITE}")
-                ok = False
-    else:
-        with print_lock:
-            print(f"{RED}[Browser] Expected 3 dropdowns, found {n}{WHITE}")
-        ok = False
+    for combo_name, opt_name in [
+        ("Select Month", month),
+        ("Select Day", str(day)),
+        ("Select Year", str(year)),
+    ]:
+        try:
+            page.get_by_role("combobox", name=combo_name).click()
+            _human_pause(0.5, 1.0)
+            page.get_by_role("option", name=opt_name).click()
+            with print_lock:
+                print(f"{GREEN}[Browser] Birthday {combo_name} -> {opt_name}{WHITE}")
+            _human_pause(0.5, 1.0)
+        except Exception as e:
+            with print_lock:
+                print(f"{RED}[Browser] Birthday {combo_name} FAILED: {e}{WHITE}")
+            ok = False
     return ok
 
 
 def _select_gender(page, gender):
-    """Click gender radio (positional: Female=0, Male=1)."""
-    radios = page.locator('input[type="radio"]')
-    n = radios.count()
-    with print_lock:
-        print(f"{CYAN}[Browser] Found {n} gender radios{WHITE}")
-    idx = 0 if gender.lower() == "female" else 1
+    """Select gender via combobox (options: Female/Male/Custom)."""
+    opt = "Female" if gender.lower() == "female" else "Male"
     ok = False
     try:
-        if n > idx:
-            radios.nth(idx).click()
-            # Verify checked
-            checked = radios.nth(idx).is_checked()
-            with print_lock:
-                print(f"{GREEN}[Browser] Gender {'Female' if idx==0 else 'Male'} clicked (checked: {checked}){WHITE}")
-            ok = checked
-        else:
-            with print_lock:
-                print(f"{RED}[Browser] Not enough radios: {n}{WHITE}")
+        page.get_by_role("combobox", name="Select your gender").click()
+        _human_pause(0.5, 1.0)
+        page.get_by_role("option", name=opt).click()
+        with print_lock:
+            print(f"{GREEN}[Browser] Gender -> {opt}{WHITE}")
+        ok = True
     except Exception as e:
         with print_lock:
             print(f"{RED}[Browser] Gender FAILED: {e}{WHITE}")
@@ -233,7 +220,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"\n{CYAN}[Browser] Creating account for {phone_number}...{WHITE}")
 
         # Navigate to Facebook registration
-        page.goto("https://www.facebook.com/reg/", wait_until="domcontentloaded")
+        page.goto("https://www.facebook.com/r.php", wait_until="domcontentloaded")
         _human_pause(2.0, 4.0)
 
         # Debug: check what page actually loaded
@@ -241,49 +228,23 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"{CYAN}[Browser] Page URL: {page.url}{WHITE}")
             print(f"{CYAN}[Browser] Page title: {page.title()}{WHITE}")
 
-        # Facebook now uses dynamic IDs with no name attributes.
-        # Fields by position: 3 text inputs (first, last, phone) + 1 password input.
+        # Wait for form to load
         try:
-            page.wait_for_selector('input[type="text"]', timeout=15000)
-            text_inputs = page.locator('input[type="text"]')
-            pwd_inputs = page.locator('input[type="password"]')
-            n_text = text_inputs.count()
-            n_pwd = pwd_inputs.count()
+            page.get_by_label("First name").wait_for(timeout=15000)
             with print_lock:
-                print(f"{GREEN}[Browser] Found {n_text} text inputs, {n_pwd} password inputs{WHITE}")
-            if n_text < 3 or n_pwd < 1:
-                raise Exception(f"Expected 3+ text and 1+ password inputs, got {n_text}/{n_pwd}")
-            firstname_found = True
-        except Exception as e:
-            firstname_found = False
-            with print_lock:
-                print(f"{RED}[Browser] Form fields error: {e}{WHITE}")
-
-        if not firstname_found:
-            # Save screenshot and dump all input fields for debugging
+                print(f"{GREEN}[Browser] Signup form loaded{WHITE}")
+        except Exception:
             page.screenshot(path="fb_reg_debug.png")
-            inputs = page.evaluate("""() => {
-                return Array.from(document.querySelectorAll('input')).map(i => ({
-                    type: i.type,
-                    name: i.name,
-                    id: i.id,
-                    placeholder: i.placeholder,
-                    ariaLabel: i.getAttribute('aria-label')
-                }));
-            }""")
             with print_lock:
-                print(f"{RED}[Browser] Firstname field not found. Screenshot: fb_reg_debug.png{WHITE}")
-                print(f"{YELLOW}[Browser] All input fields on page:{WHITE}")
-                for inp in inputs:
-                    print(f"  type={inp['type']} name={inp['name']} id={inp['id']} placeholder={inp['placeholder']} aria-label={inp['ariaLabel']}")
+                print(f"{RED}[Browser] Signup form not loaded{WHITE}")
             counter.update("failed")
-            return {"status": "failed", "number": phone_number, "reason": "firstname field not found"}
+            return {"status": "failed", "number": phone_number, "reason": "form not loaded"}
 
-        # Fill by position: 1st text=firstname, 2nd text=lastname, 3rd text=phone, 1st password=password
-        _human_type(page, text_inputs.nth(0), first_name)
-        _human_type(page, text_inputs.nth(1), last_name)
-        _human_type(page, text_inputs.nth(2), phone_number)
-        _human_type(page, pwd_inputs.nth(0), password)
+        # Fill by label (stable, IDs are dynamic)
+        _human_type(page, page.get_by_label("First name"), first_name)
+        _human_type(page, page.get_by_label("Last name"), last_name)
+        _human_type(page, page.get_by_label("Mobile number or email"), phone_number)
+        _human_type(page, page.get_by_label("Password"), password)
 
         # Select birthday
         dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
@@ -303,23 +264,15 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         # Submit - try multiple selectors
         with print_lock:
             print(f"{YELLOW}[Browser] Submitting form...{WHITE}")
-        submit_selectors = [
-            '[role="button"]:has-text("Submit")',
-            'div[role="button"]:has-text("Submit")',
-            'button[name="websubmit"]',
-            'button[type="submit"]',
-            'button:has-text("Sign Up")',
-        ]
         submitted = False
-        for sel in submit_selectors:
-            try:
-                btn = page.locator(sel).first
-                if btn.count() > 0 and btn.is_visible(timeout=5000):
-                    btn.click()
-                    submitted = True
-                    break
-            except Exception:
-                continue
+        try:
+            page.get_by_role("button", name="Submit").click()
+            submitted = True
+            with print_lock:
+                print(f"{GREEN}[Browser] Submit clicked{WHITE}")
+        except Exception as e:
+            with print_lock:
+                print(f"{RED}[Browser] Submit FAILED: {e}{WHITE}")
         if not submitted:
             # Dump all buttons/links for debugging
             buttons = page.evaluate("""() => {
@@ -346,7 +299,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         current_url = page.url
         with print_lock:
             print(f"{CYAN}[Browser] After submit URL: {current_url}{WHITE}")
-        if "/reg" in current_url and "checkpoint" not in current_url:
+        if ("/reg" in current_url or "/r.php" in current_url) and "checkpoint" not in current_url:
             page.screenshot(path="fb_submit_debug.png")
             errors = page.evaluate("""() => {
                 return Array.from(document.querySelectorAll('[role="alert"]'))
