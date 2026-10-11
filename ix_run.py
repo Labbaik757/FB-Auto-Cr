@@ -17,8 +17,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ui.logo import logo
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, EKL, LINE
-from ui.display import render_config
 from core.password_manager import select_password_config
+
+
+def _render_config(config_state):
+    """Simple config display (local version, main.py untouched)."""
+    print(f"{LINE}")
+    for k, v in config_state.items():
+        print(f" {GREEN}[{RED}●{GREEN}] {WHITE}{k}: {CYAN}{v}")
+    print(f"{LINE}")
 from core.number_manager import process_file_input
 from core.counter import Counter
 from automation.ixbrowser_register import run_ixbrowser_mode
@@ -32,8 +39,8 @@ def main():
     print(f"{YELLOW}Requires: ixBrowser desktop client running with Local API enabled.{WHITE}")
     print(f"{LINE}")
 
-    password_config = select_password_config(config_state, lambda: render_config(config_state))
-    render_config(config_state)
+    password_config = select_password_config(config_state, lambda: _render_config(config_state))
+    _render_config(config_state)
 
     numbers = process_file_input()
     if numbers is None:
@@ -43,7 +50,7 @@ def main():
         input(f"\n {RED}No numbers found. Press Enter to exit...")
         return
 
-    render_config(config_state)
+    _render_config(config_state)
     input(f"\n {WHITE}Press Enter to start ixBrowser automation... ")
 
     logo()
