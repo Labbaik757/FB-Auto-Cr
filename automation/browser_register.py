@@ -442,8 +442,9 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             if code.lower() != "skip" and code:
                 # Fill OTP and confirm (per reference)
                 try:
-                    page.get_by_text("confirmation code").wait_for(state="visible", timeout=15000)
-                    _human_type(page, page.get_by_label("confirmation code"), code)
+                    code_field = page.get_by_label("Confirmation code", exact=True)
+                    code_field.wait_for(state="visible", timeout=15000)
+                    _human_type(page, code_field, code)
                     _human_pause(1.0, 2.0)
                     page.get_by_role("button", name="Confirm").click()
                     _human_pause(3.0, 5.0)
