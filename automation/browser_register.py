@@ -164,12 +164,7 @@ def _fetch_otp_from_url(page, sms_url, timeout=180, interval=5):
         try:
             r = requests.get(sms_url, timeout=15)
             text = r.text.strip()
-            if text and not text.lower().startswith("no"):
-                # Try pipe format first: |CODE is your Facebook confirmation code|
-                m = re.search(r'\|(\d{4,8})\s+is your Facebook confirmation code', text)
-                if m:
-                    return m.group(1)
-                # Fallback: any 4-8 digit code
+            if text and not text.startswith("no"):
                 m = re.search(r"\d{4,8}", text)
                 if m:
                     return m.group(0)
