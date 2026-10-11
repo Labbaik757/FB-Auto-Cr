@@ -243,11 +243,22 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 continue
 
         if not firstname_found:
-            # Save screenshot for debugging
+            # Save screenshot and dump all input fields for debugging
             page.screenshot(path="fb_reg_debug.png")
+            inputs = page.evaluate("""() => {
+                return Array.from(document.querySelectorAll('input')).map(i => ({
+                    type: i.type,
+                    name: i.name,
+                    id: i.id,
+                    placeholder: i.placeholder,
+                    ariaLabel: i.getAttribute('aria-label')
+                }));
+            }""")
             with print_lock:
-                print(f"{RED}[Browser] Firstname field not found. Screenshot saved: fb_reg_debug.png{WHITE}")
-                print(f"{RED}[Browser] Page content preview: {page.content()[:500]}{WHITE}")
+                print(f"{RED}[Browser] Firstname field not found. Screenshot: fb_reg_debug.png{WHITE}")
+                print(f"{YELLOW}[Browser] All input fields on page:{WHITE}")
+                for inp in inputs:
+                    print(f"  type={inp['type']} name={inp['name']} id={inp['id']} placeholder={inp['placeholder']} aria-label={inp['ariaLabel']}")
             counter.update("failed")
             return {"status": "failed", "number": phone_number, "reason": "firstname field not found"}
 
