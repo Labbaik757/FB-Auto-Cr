@@ -87,7 +87,73 @@ def _select_gender(page, gender):
     _human_pause(0.5, 1.0)
 
 
-def browser_create_account(page, phone_number, password, counter=None):
+def _parse_number_entry(entry):
+    """Parse 'number|otp_url' format. Returns (number, otp_url or None)."""
+    entry = entry.strip()
+    if "|" in entry:
+        parts = entry.split("|", 1)
+        return parts[0].strip(), parts[1].strip()
+    return entry, None
+
+
+def _fetch_otp_from_url(page, sms_url, timeout=120):
+    """
+    Open SMS URL in a new tab and poll for OTP code.
+    Looks for 4-8 digit codes in page text, preferring Facebook SMS.
+    Returns the code or None.
+    """
+    import re
+
+    context = page.context
+    sms_page = context.new_page()
+    try:
+        sms_page.goto(sms_url, wait_until="domcontentloaded", timeout=30000)
+    except Exception:
+        pass
+
+    start = time.time()
+    seen_codes = set()
+    while time.time() - start < timeout:
+        try:
+            sms_page.reload(wait_until="domcontentloaded", timeout=15000)
+        except Exception:
+            pass
+        time.sleep(3)
+
+        try:
+            text = sms_page.inner_text("body")
+        except Exception:
+            continue
+
+        # Look for Facebook SMS with code
+        # Pattern: 5-8 digit code, often near "Facebook" or "FB"
+        text_lower = text.lower()
+        if "facebook" in text_lower or "fb-" in text_lower:
+            codes = re.findall(r'\b\d{5,8}\b', text)
+            for code in codes:
+                if code not in seen_codes:
+                    seen_codes.add(code)
+                    # Prefer codes near Facebook mention
+                    idx = text_lower.find("facebook")
+                    if idx == -1:
+                        idx = text_lower.find("fb-")
+                    code_idx = text.find(code)
+                    if abs(code_idx - idx) < 200:  # Within 200 chars
+                        sms_page.close()
+                        return code
+            # Fallback: return the most recent code found
+            if codes:
+                sms_page.close()
+                return codes[-1]
+
+    try:
+        sms_page.close()
+    except Exception:
+        pass
+    return None
+
+
+def browser_create_account(page, phone_number, password, counter=None, sms_url=None):
     """
     Create a single Facebook account in the browser.
 
@@ -175,12 +241,26 @@ def browser_create_account(page, phone_number, password, counter=None):
         # Check if OTP/code page appeared
         page_content = page.content().lower()
         if "code" in page_content or "confirm" in page_content or "otp" in page_content:
-            with print_lock:
-                print(f"{YELLOW}[Browser] Verification code required.{WHITE}")
-                print(f"{YELLOW}Enter the code sent to {phone_number} (or 'skip' to skip):{WHITE}")
+            code = None
 
-            # Pause for user to enter code
-            code = input(f"{CYAN}Code: {WHITE}").strip()
+            # Auto-fetch OTP from SMS URL if provided
+            if sms_url:
+                with print_lock:
+                    print(f"{CYAN}[Browser] Auto-fetching OTP from SMS link...{WHITE}")
+                code = _fetch_otp_from_url(page, sms_url)
+                if code:
+                    with print_lock:
+                        print(f"{GREEN}[Browser] OTP received: {code}{WHITE}")
+                else:
+                    with print_lock:
+                        print(f"{YELLOW}[Browser] Auto-fetch failed, manual input needed.{WHITE}")
+
+            # Fallback to manual input
+            if not code:
+                with print_lock:
+                    print(f"{YELLOW}[Browser] Verification code required.{WHITE}")
+                    print(f"{YELLOW}Enter the code sent to {phone_number} (or 'skip' to skip):{WHITE}")
+                code = input(f"{CYAN}Code: {WHITE}").strip()
 
             if code.lower() != "skip" and code:
                 # Try to find code input and submit
@@ -272,10 +352,13 @@ def run_browser_mode(numbers, password_config, counter=None):
         browser = p.chromium.launch(**_launch_kwargs)
 
         try:
-            for idx, number in enumerate(numbers, 1):
+            for idx, entry in enumerate(numbers, 1):
+                number, sms_url = _parse_number_entry(entry)
                 with print_lock:
                     print(f"\n{LINE}")
                     print(f"{CYAN}[{idx}/{len(numbers)}] Processing {number}{WHITE}")
+                    if sms_url:
+                        print(f"{CYAN}SMS URL: {sms_url[:50]}...{WHITE}")
 
                 # Fresh context per account (incognito-like)
                 context = browser.new_context(
@@ -289,7 +372,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                     # Generate password for this account
                     password = _get_password(password_config)
 
-                    result = browser_create_account(page, number, password, counter)
+                    result = browser_create_account(page, number, password, counter, sms_url)
 
                     if result["status"] == "success":
                         # Save to output (same format as HTTP version)

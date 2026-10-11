@@ -35,7 +35,7 @@ from core.counter import Counter
 from core.ixbrowser_client import get_ixbrowser, IXBROWSER_AVAILABLE
 
 # Reuse the human-like signup implementation (no duplication, no edits).
-from automation.browser_register import browser_create_account
+from automation.browser_register import browser_create_account, _parse_number_entry
 
 
 def _cdp_url(debugging_address):
@@ -87,7 +87,8 @@ def run_ixbrowser_mode(numbers, password_config, counter=None):
     delete_after = bool(ix_cfg.get("delete_profile_after", False))
 
     with sync_playwright() as p:
-        for idx, number in enumerate(numbers, 1):
+        for idx, entry in enumerate(numbers, 1):
+            number, sms_url = _parse_number_entry(entry)
             profile_id = None
             try:
                 with print_lock:
@@ -110,7 +111,7 @@ def run_ixbrowser_mode(numbers, password_config, counter=None):
 
                 try:
                     password = _get_password(password_config)
-                    result = browser_create_account(page, number, password, counter)
+                    result = browser_create_account(page, number, password, counter, sms_url)
 
                     if result["status"] == "success":
                         output_dir = get_output_dir()
