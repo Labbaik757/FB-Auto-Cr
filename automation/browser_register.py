@@ -96,7 +96,35 @@ def _parse_number_entry(entry):
     return entry, None
 
 
-def _fetch_otp_from_url(page, sms_url, timeout=120):
+def _click_resend_twice(page):
+    """Click resend code button 2 times with pauses (triggers OTP delivery)."""
+    resend_selectors = [
+        'button:has-text("Resend")',
+        'a:has-text("Resend")',
+        'button:has-text("Send code again")',
+        '[role="button"]:has-text("Resend")',
+    ]
+    clicked = 0
+    for attempt in range(2):
+        for sel in resend_selectors:
+            try:
+                btn = page.locator(sel).first
+                if btn.count() > 0 and btn.is_visible(timeout=3000):
+                    btn.click()
+                    clicked += 1
+                    with print_lock:
+                        print(f"{CYAN}[Browser] Resend clicked ({clicked}/2){WHITE}")
+                    _human_pause(3.0, 5.0)
+                    break
+            except Exception:
+                continue
+        if clicked >= 2:
+            break
+        _human_pause(2.0, 3.0)
+    return clicked
+
+
+def _fetch_otp_from_url(page, sms_url, timeout=60):
     """
     Open SMS URL in a new tab and poll for OTP code.
     Looks for 4-8 digit codes in page text, preferring Facebook SMS.
@@ -242,6 +270,9 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         page_content = page.content().lower()
         if "code" in page_content or "confirm" in page_content or "otp" in page_content:
             code = None
+
+            # Click resend twice to trigger OTP delivery, then auto-fetch
+            _click_resend_twice(page)
 
             # Auto-fetch OTP from SMS URL if provided
             if sms_url:
