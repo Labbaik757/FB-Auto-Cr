@@ -78,6 +78,17 @@ def _select_gender(page, gender):
     opt = "Female" if gender.lower() == "female" else "Male"
     ok = False
     try:
+        # Dump all comboboxes to find gender
+        combos = page.evaluate("""() => {
+            return Array.from(document.querySelectorAll('[role="combobox"]')).map(e => ({
+                name: e.getAttribute('aria-label') || e.getAttribute('aria-labelledby') || e.innerText.slice(0,30),
+                id: e.id
+            }));
+        }""")
+        with print_lock:
+            print(f"{YELLOW}[Browser] All comboboxes:{WHITE}")
+            for c in combos:
+                print(f"  name={c['name']} id={c['id']}")
         gender_names = ["Select your gender", "Gender", "Select gender"]
         combo = None
         for gname in gender_names:
@@ -88,7 +99,7 @@ def _select_gender(page, gender):
             except Exception:
                 continue
         if not combo:
-            raise Exception("gender combobox not found")
+            raise Exception(f"gender combobox not found. Available: {[c['name'] for c in combos]}")
         combo.click()
         _human_pause(0.5, 1.0)
         page.get_by_role("option", name=opt, exact=True).click()
