@@ -63,6 +63,9 @@ def _select_birthday(page, day, month, year):
             page.get_by_role("combobox", name=combo_name).click()
             _human_pause(0.5, 1.0)
             page.get_by_role("option", name=opt_name, exact=use_exact).click()
+            _human_pause(0.3, 0.6)
+            page.keyboard.press("Escape")  # Close listbox to commit value
+            _human_pause(0.3, 0.6)
             with print_lock:
                 print(f"{GREEN}[Browser] Birthday {combo_name} -> {opt_name}{WHITE}")
             _human_pause(0.5, 1.0)
@@ -92,7 +95,9 @@ def _select_gender(page, gender):
         option = page.get_by_role("option", name=opt, exact=True)
         option.wait_for(state="visible", timeout=10000)
         option.click()
-        _human_pause(0.5, 1.0)
+        _human_pause(0.3, 0.6)
+        page.keyboard.press("Escape")  # Close listbox to commit value
+        _human_pause(0.3, 0.6)
         # Verify selection
         combo_text = combo.inner_text()
         if opt.lower() in combo_text.lower():
@@ -339,6 +344,19 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     errors = ["page navigating"]
                 with print_lock:
                     print(f"{RED}[Browser] Still on reg page. Errors: {errors}{WHITE}")
+                # Check aria-invalid on all inputs
+                try:
+                    invalids = page.evaluate("""() => {
+                        return Array.from(document.querySelectorAll('input')).map(i => ({
+                            label: i.getAttribute('aria-label') || i.type,
+                            invalid: i.getAttribute('aria-invalid'),
+                            value: i.value.slice(0, 20)
+                        })).filter(x => x.invalid === 'true');
+                    }""")
+                    with print_lock:
+                        print(f"{RED}[Browser] Invalid fields: {invalids}{WHITE}")
+                except Exception:
+                    pass
                 counter.update("failed")
                 return {"status": "failed", "number": phone_number, "reason": f"submit failed: {errors}"}
         except Exception as e:
