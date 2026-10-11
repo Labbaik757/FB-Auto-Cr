@@ -248,16 +248,6 @@ This tool is provided for **educational and research purposes only**. The author
 
 ---
 
-## 📬 Contact
-
-[![Facebook](https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white)](https://www.facebook.com/sifathub)
-[![WhatsApp](https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](https://wa.me/+8801858094178)
-[![Telegram](https://img.shields.io/badge/Telegram-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/sifathub)
-
-> Feel free to reach out for any questions, issues, or custom requests.
-
----
-
 <div align="center">
 
 *Developed & Open-Sourced by **[Labbaik757](https://github.com/Labbaik757)** — Speciality & Reliability*
