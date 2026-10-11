@@ -1,0 +1,31 @@
+{
+    "device_settings": {
+        "ask_for_device": true,
+        "default_device": "none"
+    },
+    "browser_settings": {
+        "ask_for_browser": true,
+        "default_browser": "none"
+    },
+    "server_settings": {
+        "tools_server_id": "none"
+    },
+    "password_settings": {
+        "ask_for_password": true,
+        "default_password": "",
+        "use_random_password": true
+    },
+    "proxy_settings": {
+        "ask_for_proxy": true,
+        "default_proxy": ""
+    },
+    "worker_settings": {
+        "ask_for_workers": true,
+        "default_workers": 30,
+        "max_safe_workers": 200
+    },
+    "file_input_settings": {
+        "always_use_txt": false,
+        "use_multiple_excel_files": false
+    }
+}
