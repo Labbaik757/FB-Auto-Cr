@@ -153,23 +153,27 @@ def _fetch_otp_from_url(page, sms_url, timeout=20):
         except Exception:
             continue
 
-        # Look for Facebook SMS with code
-        # Pattern: 5-8 digit code, often near "Facebook" or "FB"
+        # Format: yes|06221 is your Facebook confirmation code|(Facebook)|...
+        # Also handles generic: 4-8 digit code near "Facebook"
         text_lower = text.lower()
-        if "facebook" in text_lower or "fb-" in text_lower:
-            codes = re.findall(r'\b\d{5,8}\b', text)
+        if "facebook" in text_lower or "confirmation code" in text_lower:
+            # Try pipe-separated format first
+            pipe_match = re.search(r'\|(\d{4,8})\s+is your Facebook confirmation code', text)
+            if pipe_match:
+                sms_page.close()
+                return pipe_match.group(1)
+            # Fallback: any 4-8 digit code near Facebook mention
+            codes = re.findall(r'\b\d{4,8}\b', text)
             for code in codes:
                 if code not in seen_codes:
                     seen_codes.add(code)
-                    # Prefer codes near Facebook mention
                     idx = text_lower.find("facebook")
                     if idx == -1:
-                        idx = text_lower.find("fb-")
+                        idx = text_lower.find("confirmation")
                     code_idx = text.find(code)
-                    if abs(code_idx - idx) < 200:  # Within 200 chars
+                    if abs(code_idx - idx) < 200:
                         sms_page.close()
                         return code
-            # Fallback: return the most recent code found
             if codes:
                 sms_page.close()
                 return codes[-1]
