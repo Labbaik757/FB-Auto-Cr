@@ -460,12 +460,13 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     with print_lock:
                         print(f"{YELLOW}[Browser] Auto-fetch failed, manual input needed.{WHITE}")
 
-            # Fallback to manual input
+            # Auto-fetch failed -> skip to next account (no manual prompt)
             if not code:
                 with print_lock:
-                    print(f"{YELLOW}[Browser] Verification code required.{WHITE}")
-                    print(f"{YELLOW}Enter the code sent to {phone_number} (or 'skip' to skip):{WHITE}")
-                code = input(f"{CYAN}Code: {WHITE}").strip()
+                    print(f"{YELLOW}[Browser] OTP not received, skipping to next account.{WHITE}")
+                if counter:
+                    counter.update("failed")
+                return {"status": "failed", "number": phone_number, "reason": "otp_not_received"}
 
             if code.lower() != "skip" and code:
                 # Fill OTP and confirm (per reference)
