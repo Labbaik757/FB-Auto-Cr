@@ -283,6 +283,8 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         with print_lock:
             print(f"{YELLOW}[Browser] Submitting form...{WHITE}")
         submit_selectors = [
+            '[role="button"]:has-text("Submit")',
+            'div[role="button"]:has-text("Submit")',
             'button[name="websubmit"]',
             'button[type="submit"]',
             'button:has-text("Sign Up")',
