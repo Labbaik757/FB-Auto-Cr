@@ -298,8 +298,21 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             except Exception:
                 continue
         if not submitted:
+            # Dump all buttons/links for debugging
+            buttons = page.evaluate("""() => {
+                const els = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"], a'));
+                return els.map(e => ({
+                    tag: e.tagName,
+                    type: e.type || '',
+                    name: e.name || '',
+                    text: (e.innerText || e.value || '').slice(0, 40),
+                    role: e.getAttribute('role') || ''
+                })).filter(e => e.text.length > 0 || e.type === 'submit');
+            }""")
             with print_lock:
-                print(f"{RED}[Browser] Submit button not found{WHITE}")
+                print(f"{RED}[Browser] Submit button not found. All clickable:{WHITE}")
+                for b in buttons[:20]:
+                    print(f"  tag={b['tag']} type={b['type']} name={b['name']} text={b['text']} role={b['role']}")
             counter.update("failed")
             return {"status": "failed", "number": phone_number, "reason": "submit not found"}
 
