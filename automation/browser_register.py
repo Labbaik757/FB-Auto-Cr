@@ -52,38 +52,41 @@ def _human_type(page, selector, text, min_delay=80, max_delay=250):
 
 
 def _select_birthday(page, day, month, year):
-    """Select birthday from Facebook's combobox dropdowns."""
-    # Month combobox
-    month_box = page.get_by_label("Month:")
-    month_box.click()
-    _human_pause(0.5, 1.0)
-    month_box.select_option(label=month)
-    _human_pause(0.5, 1.0)
-
-    # Day combobox
-    day_box = page.get_by_label("Day:")
-    day_box.click()
-    _human_pause(0.5, 1.0)
-    day_box.select_option(label=str(day))
-    _human_pause(0.5, 1.0)
-
-    # Year combobox
-    year_box = page.get_by_label("Year:")
-    year_box.click()
-    _human_pause(0.5, 1.0)
-    year_box.select_option(label=str(year))
-    _human_pause(0.5, 1.0)
+    """Select birthday from dropdowns (positional: month, day, year)."""
+    selects = page.locator('select')
+    n = selects.count()
+    if n >= 3:
+        # Order: Month, Day, Year
+        selects.nth(0).select_option(label=month)
+        _human_pause(0.5, 1.0)
+        selects.nth(1).select_option(label=str(day))
+        _human_pause(0.5, 1.0)
+        selects.nth(2).select_option(label=str(year))
+        _human_pause(0.5, 1.0)
+    else:
+        # Fallback to label-based
+        for label_text, value in [("Month:", month), ("Day:", str(day)), ("Year:", str(year))]:
+            try:
+                box = page.get_by_label(label_text)
+                box.select_option(label=value)
+                _human_pause(0.5, 1.0)
+            except Exception:
+                pass
 
 
 def _select_gender(page, gender):
-    """Click gender selection (Female/Male/Custom)."""
-    if gender.lower() == "female":
-        page.get_by_label("Female").click()
-    elif gender.lower() == "male":
-        page.get_by_label("Male").click()
-    else:
-        # Default to Female for random
-        page.get_by_label("Female").click()
+    """Click gender radio (positional: Female=0, Male=1, Custom=2)."""
+    radios = page.locator('input[type="radio"]')
+    n = radios.count()
+    idx = 0 if gender.lower() == "female" else 1 if gender.lower() == "male" else 0
+    try:
+        if n > idx:
+            radios.nth(idx).click()
+        else:
+            # Fallback to label-based
+            page.get_by_label("Female" if idx == 0 else "Male").click()
+    except Exception:
+        pass
     _human_pause(0.5, 1.0)
 
 
@@ -276,10 +279,29 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
 
         _human_pause(1.0, 2.0)
 
-        # Submit
+        # Submit - try multiple selectors
         with print_lock:
             print(f"{YELLOW}[Browser] Submitting form...{WHITE}")
-        page.locator('button[name="websubmit"]').click()
+        submit_selectors = [
+            'button[name="websubmit"]',
+            'button[type="submit"]',
+            'button:has-text("Sign Up")',
+        ]
+        submitted = False
+        for sel in submit_selectors:
+            try:
+                btn = page.locator(sel).first
+                if btn.count() > 0 and btn.is_visible(timeout=5000):
+                    btn.click()
+                    submitted = True
+                    break
+            except Exception:
+                continue
+        if not submitted:
+            with print_lock:
+                print(f"{RED}[Browser] Submit button not found{WHITE}")
+            counter.update("failed")
+            return {"status": "failed", "number": phone_number, "reason": "submit not found"}
 
         # Wait for result - either success (logged in) or OTP/code page
         _human_pause(3.0, 5.0)
