@@ -300,20 +300,38 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         # Wait for result - either success (logged in) or OTP/code page
         _human_pause(3.0, 5.0)
 
-        # Verify we actually left the reg page
-        current_url = page.url
-        with print_lock:
-            print(f"{CYAN}[Browser] After submit URL: {current_url}{WHITE}")
-        if ("/reg" in current_url or "/r.php" in current_url) and "checkpoint" not in current_url:
-            page.screenshot(path="fb_submit_debug.png")
-            errors = page.evaluate("""() => {
-                return Array.from(document.querySelectorAll('[role="alert"]'))
-                    .map(e => e.innerText).filter(t => t.length > 0).slice(0, 5);
-            }""")
+        # Verify we actually left the reg page (navigation = good sign)
+        try:
+            current_url = page.url
             with print_lock:
-                print(f"{RED}[Browser] Still on reg page. Errors: {errors}{WHITE}")
-            counter.update("failed")
-            return {"status": "failed", "number": phone_number, "reason": f"submit failed: {errors}"}
+                print(f"{CYAN}[Browser] After submit URL: {current_url}{WHITE}")
+        except Exception:
+            # Page is navigating, wait for it to settle
+            _human_pause(3.0, 5.0)
+            try:
+                current_url = page.url
+            except Exception:
+                current_url = ""
+            with print_lock:
+                print(f"{CYAN}[Browser] After navigation URL: {current_url}{WHITE}")
+
+        try:
+            if ("/reg" in current_url or "/r.php" in current_url) and "checkpoint" not in current_url:
+                try:
+                    page.screenshot(path="fb_submit_debug.png")
+                    errors = page.evaluate("""() => {
+                        return Array.from(document.querySelectorAll('[role="alert"]'))
+                            .map(e => e.innerText).filter(t => t.length > 0).slice(0, 5);
+                    }""")
+                except Exception:
+                    errors = ["page navigating"]
+                with print_lock:
+                    print(f"{RED}[Browser] Still on reg page. Errors: {errors}{WHITE}")
+                counter.update("failed")
+                return {"status": "failed", "number": phone_number, "reason": f"submit failed: {errors}"}
+        except Exception as e:
+            with print_lock:
+                print(f"{YELLOW}[Browser] URL check skipped (navigating): {e}{WHITE}")
 
         # Check if we're logged in (c_user cookie or profile URL)
         cookies = page.context.cookies()
