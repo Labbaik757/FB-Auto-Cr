@@ -484,9 +484,11 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                             with print_lock:
                                 print(f"{CYAN}[Browser] Opening profile...{WHITE}")
                             page.goto(f"https://www.facebook.com/{c_user}", wait_until="domcontentloaded", timeout=30000)
-                            _human_pause(2.0, 4.0)
+                            _human_pause(3.0, 5.0)
                             with print_lock:
                                 print(f"{GREEN}[Browser] Profile opened: {page.url}{WHITE}")
+                            # Keep browser open 15s so profile is visible
+                            _human_pause(12.0, 15.0)
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
