@@ -382,11 +382,18 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             with print_lock:
                 print(f"{YELLOW}[Browser] URL check skipped (navigating): {e}{WHITE}")
 
-        # Check if we're logged in (c_user cookie or profile URL)
+        # Check if we're on confirmation page FIRST (even with cookie, OTP needed)
+        try:
+            current_url = page.url.lower()
+        except Exception:
+            current_url = ""
+        on_confirm_page = "confirmemail" in current_url or "checkpoint" in current_url or "confirm" in current_url
+
+        # Check if we're logged in (c_user cookie) AND not on confirm page
         cookies = page.context.cookies()
         c_user = next((c["value"] for c in cookies if c["name"] == "c_user"), None)
 
-        if c_user:
+        if c_user and not on_confirm_page:
             # Success - save account
             cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
             result = f"{c_user}|{password}|{cookie_str}"
@@ -405,9 +412,9 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 "result_line": result,
             }
 
-        # Check if OTP/code page appeared
+        # Check if OTP/code page appeared (or we're on confirm page)
         page_content = page.content().lower()
-        if "code" in page_content or "confirm" in page_content or "otp" in page_content:
+        if on_confirm_page or "code" in page_content or "confirm" in page_content or "otp" in page_content:
             code = None
 
             # Click resend twice to trigger OTP delivery, then auto-fetch
@@ -445,6 +452,17 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     cookies = page.context.cookies()
                     c_user = next((c["value"] for c in cookies if c["name"] == "c_user"), None)
                     if c_user:
+                        # Open profile to verify account works
+                        try:
+                            with print_lock:
+                                print(f"{CYAN}[Browser] Opening profile...{WHITE}")
+                            page.goto(f"https://www.facebook.com/{c_user}", wait_until="domcontentloaded", timeout=30000)
+                            _human_pause(2.0, 4.0)
+                            with print_lock:
+                                print(f"{GREEN}[Browser] Profile opened: {page.url}{WHITE}")
+                        except Exception as e:
+                            with print_lock:
+                                print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
                         cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
                         if counter:
                             counter.update("success")
