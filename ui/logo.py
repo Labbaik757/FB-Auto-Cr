@@ -17,12 +17,12 @@ def clear():
 def logo():
     clear()
     print(f"""{GREEN}
-      .d8888.  db    db  d8888b.
-      88'  YP  `8b  d8'  88  `8D
-      `8bo.     `8bd8'   88oobY'
-        `Y8b.   .dPYb.   88`8b
-      db   8D  .8P  Y8.  88 `88.
-      `8888Y'  YP    YP  88   YD   {ORANGE}V-{VERSION}
+      d8888b. db    db db   dD
+      88  `8D 88    88 88 ,8P'
+      88   88 88    88 88,8P
+      88   88 88    88 88`8b
+      88  .8D 88b  d88 88 `88.
+      Y8888D' ~Y8888P' YP   YD   {ORANGE}V-{VERSION}
 {LINE}
  {GREEN}[{RED}●{GREEN}] TOOL OWNER   {CYAN}:{GREEN} @Labbaik757
  {GREEN}[{RED}●{GREEN}] TOOL         {CYAN}:{GREEN} AUTO CREATE
