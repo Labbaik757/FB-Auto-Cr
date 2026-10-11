@@ -78,7 +78,16 @@ def _select_gender(page, gender):
     opt = "Female" if gender.lower() == "female" else "Male"
     ok = False
     try:
-        page.get_by_role("combobox", name="Select your gender").click()
+        # Try exact name first, then 4th combobox (after 3 birthday ones)
+        try:
+            combo = page.get_by_role("combobox", name="Select your gender")
+            combo.wait_for(timeout=5000)
+        except Exception:
+            with print_lock:
+                print(f"{YELLOW}[Browser] Gender by name not found, trying 4th combobox{WHITE}")
+            combo = page.get_by_role("combobox").nth(3)
+            combo.wait_for(timeout=5000)
+        combo.click()
         _human_pause(0.5, 1.0)
         page.get_by_role("option", name=opt, exact=True).click()
         with print_lock:
