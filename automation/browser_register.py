@@ -281,7 +281,16 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"{YELLOW}[Browser] Submitting form...{WHITE}")
         submitted = False
         try:
-            page.get_by_role("button", name="Submit").click()
+            btn = page.get_by_role("button", name="Submit")
+            btn.scroll_into_view_if_needed(timeout=5000)
+            _human_pause(0.5, 1.0)
+            try:
+                btn.click(timeout=10000)
+            except Exception:
+                # Fallback: JS click for div-based buttons
+                with print_lock:
+                    print(f"{YELLOW}[Browser] Normal click failed, trying JS click{WHITE}")
+                btn.evaluate("el => el.click()")
             submitted = True
             with print_lock:
                 print(f"{GREEN}[Browser] Submit clicked{WHITE}")
