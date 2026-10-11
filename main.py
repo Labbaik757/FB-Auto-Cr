@@ -42,6 +42,34 @@ def render_config(config_state):
 def run_create():
     config_state = {}
 
+    # Mode selection: HTTP (default) or Browser automation
+    print(f" {GREEN}[{RED}01{GREEN}] HTTP Mode {WHITE}(Fast, direct requests)")
+    print(f" {GREEN}[{RED}02{GREEN}] Browser Mode {WHITE}(Playwright, human-like, slower)")
+    print(f"{LINE}")
+    mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2) [1] {EKL} ").strip()
+    browser_mode = (mode_choice == "2")
+    config_state["mode"] = "Browser (Playwright)" if browser_mode else "HTTP"
+
+    if browser_mode:
+        # Browser mode: simplified flow (no device/server/proxy needed)
+        from automation.browser_register import run_browser_mode
+        password_config = select_password_config(config_state, lambda: render_config(config_state))
+        render_config(config_state)
+        numbers = process_file_input()
+        if numbers is None:
+            input(f"\n {RED}Press Enter to exit...")
+            return
+        if not numbers:
+            input(f"\n {RED}No numbers found. Press Enter to exit...")
+            return
+        render_config(config_state)
+        input(f"\n {WHITE}Press Enter to start browser automation... ")
+        logo()
+        counter = Counter()
+        run_browser_mode(numbers, password_config, counter)
+        input(f"\n {WHITE}Press Enter to exit... ")
+        return
+
     device_type = select_device(config_state, lambda: render_config(config_state))
     browser_type = select_browser(device_type, config_state, lambda: render_config(config_state))
     server = select_server(config_state, lambda: render_config(config_state))
