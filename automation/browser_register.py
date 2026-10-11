@@ -197,7 +197,7 @@ def _click_resend_twice(page):
     return clicked
 
 
-def _fetch_otp_from_url(page, sms_url, timeout=180, interval=5):
+def _fetch_otp_from_url(page, sms_url, timeout=60, interval=2):
     """
     Fetch OTP via HTTP requests (simple API endpoint).
     Response is plain text; 'no' prefix means no OTP yet.
