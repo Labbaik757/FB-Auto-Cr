@@ -149,14 +149,13 @@ def _click_resend_twice(page):
                     btn.click()
                     clicked += 1
                     with print_lock:
-                        print(f"{CYAN}[Browser] Resend clicked ({clicked}/2){WHITE}")
-                    _human_pause(3.0, 5.0)
+                        print(f"{CYAN}[Browser] Resend clicked ({clicked}){WHITE}")
+                    # No pause between resends - click back-to-back
                     break
             except Exception:
                 continue
-        if clicked >= 2:
+        if clicked >= 3:
             break
-        _human_pause(2.0, 3.0)
     return clicked
 
 
