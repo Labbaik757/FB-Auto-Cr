@@ -128,7 +128,30 @@ def _parse_number_entry(entry):
 
 
 def _click_resend_twice(page):
-    """Click resend code button 2 times with pauses (triggers OTP delivery)."""
+    """Click resend code button 3 times back-to-back (triggers OTP delivery)."""
+    # First: click the expander below Continue to reveal resend option
+    expander_selectors = [
+        'button:has-text("Didn\'t get the code")',
+        'a:has-text("Didn\'t get the code")',
+        '[role="button"]:has-text("Didn\'t get the code")',
+        'button:has-text("Need another way")',
+        'a:has-text("Need another way")',
+        'button:has-text("Try another way")',
+        'a:has-text("Try another way")',
+        'button:has-text("More options")',
+    ]
+    for sel in expander_selectors:
+        try:
+            btn = page.locator(sel).first
+            if btn.count() > 0 and btn.is_visible(timeout=3000):
+                btn.click()
+                with print_lock:
+                    print(f"{CYAN}[Browser] Expander clicked to reveal resend{WHITE}")
+                _human_pause(1.0, 2.0)
+                break
+        except Exception:
+            continue
+
     resend_selectors = [
         'button:has-text("Resend")',
         'a:has-text("Resend")',
@@ -136,12 +159,13 @@ def _click_resend_twice(page):
         'button:has-text("Send code again")',
         'a:has-text("Send again")',
         '[role="button"]:has-text("Send again")',
-        'a:has-text("Didn\'t get the code")',
         'button:has-text("Resend SMS")',
         'a:has-text("Resend SMS")',
+        'button:has-text("Resend code")',
+        'a:has-text("Resend code")',
     ]
     clicked = 0
-    for attempt in range(2):
+    for attempt in range(3):
         for sel in resend_selectors:
             try:
                 btn = page.locator(sel).first
@@ -149,7 +173,7 @@ def _click_resend_twice(page):
                     btn.click()
                     clicked += 1
                     with print_lock:
-                        print(f"{CYAN}[Browser] Resend clicked ({clicked}){WHITE}")
+                        print(f"{CYAN}[Browser] Resend clicked ({clicked}/3){WHITE}")
                     # No pause between resends - click back-to-back
                     break
             except Exception:
