@@ -132,8 +132,13 @@ def _click_resend_twice(page):
     resend_selectors = [
         'button:has-text("Resend")',
         'a:has-text("Resend")',
-        'button:has-text("Send code again")',
         '[role="button"]:has-text("Resend")',
+        'button:has-text("Send code again")',
+        'a:has-text("Send again")',
+        '[role="button"]:has-text("Send again")',
+        'a:has-text("Didn\'t get the code")',
+        'button:has-text("Resend SMS")',
+        'a:has-text("Resend SMS")',
     ]
     clicked = 0
     for attempt in range(2):
@@ -446,8 +451,27 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     code_field.wait_for(state="visible", timeout=15000)
                     _human_type(page, code_field, code)
                     _human_pause(1.0, 2.0)
-                    page.get_by_role("button", name="Confirm").click()
-                    _human_pause(3.0, 5.0)
+                    # Click Confirm, handle navigation as success
+                    try:
+                        confirm_btn = page.get_by_role("button", name="Confirm")
+                        confirm_btn.wait_for(state="visible", timeout=10000)
+                        # Wait for navigation after click (success = leave confirm page)
+                        with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
+                            confirm_btn.click()
+                        navigated = True
+                    except Exception as nav_e:
+                        # Check if we navigated anyway (success)
+                        try:
+                            cur = page.url
+                            if "confirmemail" not in cur and "checkpoint" not in cur:
+                                navigated = True
+                                with print_lock:
+                                    print(f"{GREEN}[Browser] Navigated after confirm: {cur}{WHITE}")
+                            else:
+                                navigated = False
+                        except Exception:
+                            navigated = False
+                    _human_pause(2.0, 3.0)
 
                     # Check again for login
                     cookies = page.context.cookies()
