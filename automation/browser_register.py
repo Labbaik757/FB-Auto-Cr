@@ -236,9 +236,19 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
     """
     fake = Faker()
 
-    # Generate identity
-    first_name = fake.first_name()
-    last_name = fake.last_name()
+    # Blocked popular/generic names (never use these)
+    BLOCKED_NAMES = {"king", "queen", "love", "kingdom", "prince", "princess",
+                     "angel", "devil", "baby", "sweet", "cute", "hot", "sexy",
+                     "star", "moon", "sun", "dark", "light", "dragon", "tiger",
+                     "lion", "wolf", "boss", "admin", "test", "demo", "user",
+                     "facebook", "fb", "meta", "official", "real", "fake"}
+
+    # Generate identity (skip blocked names)
+    for _ in range(20):
+        first_name = fake.first_name()
+        last_name = fake.last_name()
+        if first_name.lower() not in BLOCKED_NAMES and last_name.lower() not in BLOCKED_NAMES:
+            break
     gender = random.choice(["Female", "Male"])
 
     # Birthday: 18-40 years old (matches HTTP version)
