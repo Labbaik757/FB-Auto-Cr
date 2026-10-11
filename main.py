@@ -1,9 +1,7 @@
 import os
 import sys
 import platform
-import threading
 from itertools import count
-from concurrent.futures import ThreadPoolExecutor
 
 if platform.system() == "Windows":
     os.system('')
@@ -17,7 +15,6 @@ from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, EKL, LINE
 from ui.display import print_lock
 from core.device_manager import select_device, select_browser, select_server
 from core.proxy_manager import get_proxy_list, create_proxy_cycle, get_no_proxy_data
-from core.worker_manager import get_worker_count
 from core.password_manager import select_password_config
 from core.number_manager import process_file_input
 from core.path_manager import is_termux_or_mobile, get_base_storage_dir, get_output_dir
@@ -52,7 +49,7 @@ def run_create():
     proxy_list = get_proxy_list(config_state, lambda: render_config(config_state))
     proxy_cycle = create_proxy_cycle(proxy_list)
     no_proxy_data = get_no_proxy_data()
-    max_workers = get_worker_count(config_state, lambda: render_config(config_state))
+    config_state["workers"] = "Sequential (1)"
 
     render_config(config_state)
 
@@ -77,18 +74,13 @@ def run_create():
         "password_config": password_config,
     }
 
-    # Semaphore prevents excessive queuing beyond active workers
-    sem = threading.Semaphore(max_workers + 5)
     wid_gen = count(1)
 
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for num in numbers:
-                sem.acquire()
-                proxy_data = next(proxy_cycle) if proxy_cycle else no_proxy_data
-                wid = next(wid_gen)
-                future = executor.submit(create_worker, wid, num, proxy_data, config, counter)
-                future.add_done_callback(lambda _: sem.release())
+        for num in numbers:
+            proxy_data = next(proxy_cycle) if proxy_cycle else no_proxy_data
+            wid = next(wid_gen)
+            create_worker(wid, num, proxy_data, config, counter)
     except KeyboardInterrupt:
         print(f"\n\n {RED}Stopped by user.")
 
