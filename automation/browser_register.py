@@ -54,15 +54,15 @@ def _human_type(page, selector, text, min_delay=80, max_delay=250):
 def _select_birthday(page, day, month, year):
     """Select birthday via custom comboboxes (click combobox, then option)."""
     ok = True
-    for combo_name, opt_name in [
-        ("Select Month", month),
-        ("Select Day", str(day)),
-        ("Select Year", str(year)),
+    for combo_name, opt_name, use_exact in [
+        ("Select Month", month, False),
+        ("Select Day", str(day), True),
+        ("Select Year", str(year), True),
     ]:
         try:
             page.get_by_role("combobox", name=combo_name).click()
             _human_pause(0.5, 1.0)
-            page.get_by_role("option", name=opt_name).click()
+            page.get_by_role("option", name=opt_name, exact=use_exact).click()
             with print_lock:
                 print(f"{GREEN}[Browser] Birthday {combo_name} -> {opt_name}{WHITE}")
             _human_pause(0.5, 1.0)
@@ -78,9 +78,20 @@ def _select_gender(page, gender):
     opt = "Female" if gender.lower() == "female" else "Male"
     ok = False
     try:
-        page.get_by_role("combobox", name="Select your gender").click()
+        gender_names = ["Select your gender", "Gender", "Select gender"]
+        combo = None
+        for gname in gender_names:
+            try:
+                combo = page.get_by_role("combobox", name=gname)
+                combo.wait_for(timeout=3000)
+                break
+            except Exception:
+                continue
+        if not combo:
+            raise Exception("gender combobox not found")
+        combo.click()
         _human_pause(0.5, 1.0)
-        page.get_by_role("option", name=opt).click()
+        page.get_by_role("option", name=opt, exact=True).click()
         with print_lock:
             print(f"{GREEN}[Browser] Gender -> {opt}{WHITE}")
         ok = True
