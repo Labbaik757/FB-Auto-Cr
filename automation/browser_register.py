@@ -258,7 +258,9 @@ def run_browser_mode(numbers, password_config, counter=None):
 
     with sync_playwright() as p:
         # Launch visible browser (headed) so user can see
+        # Uses installed Chrome (channel="chrome") - no Chromium download needed
         browser = p.chromium.launch(
+            channel="chrome",
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
         )
