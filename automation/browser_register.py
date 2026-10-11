@@ -228,11 +228,15 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"{CYAN}[Browser] Page URL: {page.url}{WHITE}")
             print(f"{CYAN}[Browser] Page title: {page.title()}{WHITE}")
 
-        # Wait for form to load
+        # Wait for form to load (positional check)
         try:
-            page.get_by_label("First name").wait_for(timeout=15000)
+            page.wait_for_selector('input[type="text"]', timeout=15000)
+            n_text = page.locator('input[type="text"]').count()
+            n_pwd = page.locator('input[type="password"]').count()
             with print_lock:
-                print(f"{GREEN}[Browser] Signup form loaded{WHITE}")
+                print(f"{GREEN}[Browser] Form loaded: {n_text} text, {n_pwd} password{WHITE}")
+            if n_text < 3 or n_pwd < 1:
+                raise Exception("not enough fields")
         except Exception:
             page.screenshot(path="fb_reg_debug.png")
             with print_lock:
@@ -240,11 +244,13 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             counter.update("failed")
             return {"status": "failed", "number": phone_number, "reason": "form not loaded"}
 
-        # Fill by label (stable, IDs are dynamic)
-        _human_type(page, page.get_by_label("First name"), first_name)
-        _human_type(page, page.get_by_label("Last name"), last_name)
-        _human_type(page, page.get_by_label("Mobile number or email"), phone_number)
-        _human_type(page, page.get_by_label("Password"), password)
+        # Fill by position (was working): 3 text inputs + 1 password
+        text_inputs = page.locator('input[type="text"]')
+        pwd_inputs = page.locator('input[type="password"]')
+        _human_type(page, text_inputs.nth(0), first_name)
+        _human_type(page, text_inputs.nth(1), last_name)
+        _human_type(page, text_inputs.nth(2), phone_number)
+        _human_type(page, pwd_inputs.nth(0), password)
 
         # Select birthday
         dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
