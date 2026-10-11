@@ -258,10 +258,18 @@ def run_browser_mode(numbers, password_config, counter=None):
 
     with sync_playwright() as p:
         # Launch visible browser (headed) so user can see
-        browser = p.chromium.launch(
+        # executable_path: uses manually placed Chromium (bypasses install check)
+        import os
+        _exe = os.path.expandvars(
+            r"C:\Users\Rizvi Lion\AppData\Local\ms-playwright\chromium-1243\chrome-win\chrome.exe"
+        )
+        _launch_kwargs = dict(
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
         )
+        if os.path.exists(_exe):
+            _launch_kwargs["executable_path"] = _exe
+        browser = p.chromium.launch(**_launch_kwargs)
 
         try:
             for idx, number in enumerate(numbers, 1):
