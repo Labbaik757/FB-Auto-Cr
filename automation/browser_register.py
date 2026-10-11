@@ -640,9 +640,17 @@ def run_browser_mode(numbers, password_config, counter=None):
                         with open(os.path.join(output_dir, "browser_accounts.txt"), "a") as f:
                             f.write(result["result_line"] + "\n")
 
+                except Exception as e:
+                    with print_lock:
+                        print(f"{RED}[Browser] Account {number} error: {e}{WHITE}")
+                    if counter:
+                        counter.update("error")
                 finally:
                     # Close context (clear all data for this account)
-                    context.close()
+                    try:
+                        context.close()
+                    except Exception:
+                        pass
 
                 # Pause between accounts (human-like)
                 if idx < len(numbers):
