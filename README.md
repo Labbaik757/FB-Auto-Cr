@@ -1,4 +1,4 @@
-[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=22&pause=1000&color=76e033&center=true&vCenter=true&width=700&lines=NV+Create+%7C+Mr-SxR;Facebook+Automated+Registration)](https://github.com/Mr-SxR/facebook-account-registration)
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=22&pause=1000&color=76e033&center=true&vCenter=true&width=700&lines=FB-Auto-Cr+%7C+Labbaik757;Facebook+Automated+Registration)](https://github.com/Labbaik757/FB-Auto-Cr)
 
 <div align="center">
 
@@ -43,8 +43,8 @@ The tool completes the Facebook registration process up to the **verification st
 ### 💻 PC (Windows / Linux / macOS)
 
 ```bash
-git clone https://github.com/Mr-SxR/facebook-account-registration.git
-cd facebook-account-registration
+git clone https://github.com/Labbaik757/FB-Auto-Cr.git
+cd FB-Auto-Cr
 pip install -r requirements.txt
 python main.py
 ```
@@ -60,8 +60,8 @@ python main.py
 termux-setup-storage
 
 # 2. Clone and Run
-git clone https://github.com/Mr-SxR/facebook-account-registration.git
-cd facebook-account-registration
+git clone https://github.com/Labbaik757/FB-Auto-Cr.git
+cd FB-Auto-Cr
 pip install -r requirements.txt
 python main.py
 ```
@@ -260,6 +260,6 @@ This tool is provided for **educational and research purposes only**. The author
 
 <div align="center">
 
-*Developed & Open-Sourced by **[Mr-SxR](https://github.com/Mr-SxR)** — Speciality & Reliability*
+*Developed & Open-Sourced by **[Labbaik757](https://github.com/Labbaik757)** — Speciality & Reliability*
 
 </div>
