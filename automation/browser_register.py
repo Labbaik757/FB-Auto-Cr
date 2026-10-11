@@ -285,13 +285,32 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     print(f"{YELLOW}[Browser] Normal click failed, trying JS click{WHITE}")
                 btn.evaluate("el => el.click()")
             # Wait for navigation after submit
+            navigated = False
+            try:
+                page.wait_for_url(lambda url: "/r.php" not in url and "/reg" not in url, timeout=10000)
+                navigated = True
+            except Exception:
+                pass
+            if not navigated:
+                # Fallback: press Enter on password field
+                with print_lock:
+                    print(f"{YELLOW}[Browser] Click didn't navigate, trying Enter key{WHITE}")
+                try:
+                    pwd_inputs.nth(0).click()
+                    _human_pause(0.3, 0.6)
+                    page.keyboard.press("Enter")
+                    page.wait_for_url(lambda url: "/r.php" not in url and "/reg" not in url, timeout=10000)
+                    navigated = True
+                except Exception:
+                    pass
+            # Final networkidle wait
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
                 pass
             submitted = True
             with print_lock:
-                print(f"{GREEN}[Browser] Submit clicked{WHITE}")
+                print(f"{GREEN}[Browser] Submit done (navigated: {navigated}){WHITE}")
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Browser] Submit FAILED: {e}{WHITE}")
