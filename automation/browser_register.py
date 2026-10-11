@@ -55,39 +55,53 @@ def _select_birthday(page, day, month, year):
     """Select birthday from dropdowns (positional: month, day, year)."""
     selects = page.locator('select')
     n = selects.count()
+    with print_lock:
+        print(f"{CYAN}[Browser] Found {n} dropdowns{WHITE}")
+    ok = True
     if n >= 3:
-        # Order: Month, Day, Year
-        selects.nth(0).select_option(label=month)
-        _human_pause(0.5, 1.0)
-        selects.nth(1).select_option(label=str(day))
-        _human_pause(0.5, 1.0)
-        selects.nth(2).select_option(label=str(year))
-        _human_pause(0.5, 1.0)
-    else:
-        # Fallback to label-based
-        for label_text, value in [("Month:", month), ("Day:", str(day)), ("Year:", str(year))]:
+        for idx, (label, value) in enumerate([(month, month), (str(day), str(day)), (str(year), str(year))]):
             try:
-                box = page.get_by_label(label_text)
-                box.select_option(label=value)
+                selects.nth(idx).select_option(label=value)
+                # Verify selection
+                selected = selects.nth(idx).input_value()
+                with print_lock:
+                    print(f"{GREEN}[Browser] Dropdown {idx} set to {value} (actual: {selected}){WHITE}")
                 _human_pause(0.5, 1.0)
-            except Exception:
-                pass
+            except Exception as e:
+                with print_lock:
+                    print(f"{RED}[Browser] Dropdown {idx} FAILED: {e}{WHITE}")
+                ok = False
+    else:
+        with print_lock:
+            print(f"{RED}[Browser] Expected 3 dropdowns, found {n}{WHITE}")
+        ok = False
+    return ok
 
 
 def _select_gender(page, gender):
-    """Click gender radio (positional: Female=0, Male=1, Custom=2)."""
+    """Click gender radio (positional: Female=0, Male=1)."""
     radios = page.locator('input[type="radio"]')
     n = radios.count()
-    idx = 0 if gender.lower() == "female" else 1 if gender.lower() == "male" else 0
+    with print_lock:
+        print(f"{CYAN}[Browser] Found {n} gender radios{WHITE}")
+    idx = 0 if gender.lower() == "female" else 1
+    ok = False
     try:
         if n > idx:
             radios.nth(idx).click()
+            # Verify checked
+            checked = radios.nth(idx).is_checked()
+            with print_lock:
+                print(f"{GREEN}[Browser] Gender {'Female' if idx==0 else 'Male'} clicked (checked: {checked}){WHITE}")
+            ok = checked
         else:
-            # Fallback to label-based
-            page.get_by_label("Female" if idx == 0 else "Male").click()
-    except Exception:
-        pass
+            with print_lock:
+                print(f"{RED}[Browser] Not enough radios: {n}{WHITE}")
+    except Exception as e:
+        with print_lock:
+            print(f"{RED}[Browser] Gender FAILED: {e}{WHITE}")
     _human_pause(0.5, 1.0)
+    return ok
 
 
 def _parse_number_entry(entry):
@@ -272,12 +286,19 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         _human_type(page, pwd_inputs.nth(0), password)
 
         # Select birthday
-        _select_birthday(page, birth_date.day, birth_month, birth_date.year)
+        dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
 
         # Select gender
-        _select_gender(page, gender)
+        gender_ok = _select_gender(page, gender)
 
         _human_pause(1.0, 2.0)
+
+        if not dob_ok or not gender_ok:
+            with print_lock:
+                print(f"{RED}[Browser] DOB or gender failed, not submitting{WHITE}")
+            page.screenshot(path="fb_form_debug.png")
+            counter.update("failed")
+            return {"status": "failed", "number": phone_number, "reason": "dob/gender failed"}
 
         # Submit - try multiple selectors
         with print_lock:
@@ -320,6 +341,21 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
 
         # Wait for result - either success (logged in) or OTP/code page
         _human_pause(3.0, 5.0)
+
+        # Verify we actually left the reg page
+        current_url = page.url
+        with print_lock:
+            print(f"{CYAN}[Browser] After submit URL: {current_url}{WHITE}")
+        if "/reg" in current_url and "checkpoint" not in current_url:
+            page.screenshot(path="fb_submit_debug.png")
+            errors = page.evaluate("""() => {
+                return Array.from(document.querySelectorAll('[role="alert"]'))
+                    .map(e => e.innerText).filter(t => t.length > 0).slice(0, 5);
+            }""")
+            with print_lock:
+                print(f"{RED}[Browser] Still on reg page. Errors: {errors}{WHITE}")
+            counter.update("failed")
+            return {"status": "failed", "number": phone_number, "reason": f"submit failed: {errors}"}
 
         # Check if we're logged in (c_user cookie or profile URL)
         cookies = page.context.cookies()
