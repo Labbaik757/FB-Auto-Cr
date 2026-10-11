@@ -8,7 +8,7 @@ print_lock = threading.Lock()
 # Build the live status bar string shown at the bottom of the terminal
 def status_line(checked, success, failed, error, no_account=0):
     return (
-        f"\r{GREEN}[{WHITE}Mr-SxR{GREEN}] "
+        f"\r{GREEN}[{WHITE}LBK{GREEN}] "
         f"{WHITE}CHECKED:-{checked}{CYAN}|"
         f"{GREEN}SUCCESS:-{success}{CYAN}|"
         f"{YELLOW}FAILED:-{failed}{CYAN}|"

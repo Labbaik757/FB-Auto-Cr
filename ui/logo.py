@@ -24,7 +24,7 @@ def logo():
       db   8D  .8P  Y8.  88 `88.
       `8888Y'  YP    YP  88   YD   {ORANGE}V-{VERSION}
 {LINE}
- {GREEN}[{RED}●{GREEN}] TOOL OWNER   {CYAN}:{GREEN} @mrsxrtool
+ {GREEN}[{RED}●{GREEN}] TOOL OWNER   {CYAN}:{GREEN} @Labbaik757
  {GREEN}[{RED}●{GREEN}] TOOL         {CYAN}:{GREEN} AUTO CREATE
  {GREEN}[{RED}●{GREEN}] TOOL STATUS  {CYAN}:{GREEN} PAID
 {LINE}""")
