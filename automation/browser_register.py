@@ -453,13 +453,8 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     _human_pause(1.0, 2.0)
                     # Click Confirm, handle navigation as success
                     try:
-                        # Try Continue first, then Confirm
-                        confirm_btn = page.get_by_role("button", name="Continue")
-                        try:
-                            confirm_btn.wait_for(state="visible", timeout=5000)
-                        except Exception:
-                            confirm_btn = page.get_by_role("button", name="Confirm")
-                            confirm_btn.wait_for(state="visible", timeout=10000)
+                        confirm_btn = page.get_by_role("button", name="Continue", exact=True)
+                        confirm_btn.wait_for(state="visible", timeout=10000)
                         # Wait for navigation after click (success = leave confirm page)
                         with page.expect_navigation(timeout=15000, wait_until="domcontentloaded"):
                             confirm_btn.click()
