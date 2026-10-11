@@ -499,7 +499,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 try:
                     code_field = page.get_by_label("Confirmation code", exact=True)
                     code_field.wait_for(state="visible", timeout=15000)
-                    _human_type(page, code_field, code)
+                    code_field.fill(code)  # No click - overlay intercepts pointer events
                     _human_pause(1.0, 2.0)
                     # Click Confirm, handle navigation as success
                     # After OTP fill, click Continue -> profile opens automatically
