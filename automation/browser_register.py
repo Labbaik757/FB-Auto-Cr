@@ -643,8 +643,33 @@ def run_browser_mode(numbers, password_config, counter=None):
                 except Exception as e:
                     with print_lock:
                         print(f"{RED}[Browser] Account {number} error: {e}{WHITE}")
+                        print(f"{YELLOW}[Browser] Fix manually, then Enter=retry, 'skip'=next account{WHITE}")
                     if counter:
                         counter.update("error")
+                    # Ask user: retry or skip (blocking, user wants manual control)
+                    try:
+                        choice = input(f"{CYAN}Choice: {WHITE}").strip().lower()
+                    except Exception:
+                        choice = "skip"
+                    if choice == "skip":
+                        with print_lock:
+                            print(f"{YELLOW}[Browser] Skipping to next account{WHITE}")
+                    else:
+                        with print_lock:
+                            print(f"{CYAN}[Browser] Retrying {number}...{WHITE}")
+                        # Retry same account by decrementing loop handled via continue flag
+                        # Simple: re-run browser_create_account once more
+                        try:
+                            result = browser_create_account(page, number, password, counter, sms_url)
+                            if result["status"] == "success":
+                                from core.path_manager import get_output_dir
+                                output_dir = get_output_dir()
+                                os.makedirs(output_dir, exist_ok=True)
+                                with open(os.path.join(output_dir, "browser_accounts.txt"), "a") as f:
+                                    f.write(result["result_line"] + "\n")
+                        except Exception as e2:
+                            with print_lock:
+                                print(f"{RED}[Browser] Retry failed: {e2}{WHITE}")
                 finally:
                     # Close context (clear all data for this account)
                     try:
