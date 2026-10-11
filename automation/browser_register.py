@@ -124,7 +124,7 @@ def _click_resend_twice(page):
     return clicked
 
 
-def _fetch_otp_from_url(page, sms_url, timeout=60):
+def _fetch_otp_from_url(page, sms_url, timeout=20):
     """
     Open SMS URL in a new tab and poll for OTP code.
     Looks for 4-8 digit codes in page text, preferring Facebook SMS.
