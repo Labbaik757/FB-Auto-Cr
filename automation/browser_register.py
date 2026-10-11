@@ -16,6 +16,20 @@ import random
 import time
 import sys
 import os
+import threading
+
+def _input_with_timeout(prompt, timeout=10):
+    """Get input with timeout. Returns None on timeout."""
+    result = [None]
+    def _get():
+        try:
+            result[0] = input(prompt)
+        except Exception:
+            pass
+    t = threading.Thread(target=_get, daemon=True)
+    t.start()
+    t.join(timeout)
+    return result[0]
 
 # Add project root to path for standalone execution
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -464,13 +478,21 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     with print_lock:
                         print(f"{YELLOW}[Browser] Auto-fetch failed, manual input needed.{WHITE}")
 
-            # Auto-fetch failed -> skip to next account (no manual prompt)
+            # Auto-fetch failed -> 10s manual entry window, then skip
             if not code:
                 with print_lock:
-                    print(f"{YELLOW}[Browser] OTP not received, skipping to next account.{WHITE}")
-                if counter:
-                    counter.update("failed")
-                return {"status": "failed", "number": phone_number, "reason": "otp_not_received"}
+                    print(f"{YELLOW}[Browser] OTP not received. Enter manually within 10s (or wait to skip):{WHITE}")
+                manual = _input_with_timeout(f"{CYAN}Code (10s): {WHITE}", timeout=10)
+                if manual and manual.strip() and manual.strip().lower() != "skip":
+                    code = manual.strip()
+                    with print_lock:
+                        print(f"{GREEN}[Browser] Manual OTP: {code}{WHITE}")
+                else:
+                    with print_lock:
+                        print(f"{YELLOW}[Browser] No OTP, skipping to next account.{WHITE}")
+                    if counter:
+                        counter.update("failed")
+                    return {"status": "failed", "number": phone_number, "reason": "otp_not_received"}
 
             if code.lower() != "skip" and code:
                 # Fill OTP and confirm (per reference)
