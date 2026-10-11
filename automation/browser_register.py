@@ -252,6 +252,18 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             counter.update("failed")
             return {"status": "failed", "number": phone_number, "reason": "dob/gender failed"}
 
+        # Diagnostic: check field values before submit
+        try:
+            vals = page.evaluate("""() => {
+                const texts = Array.from(document.querySelectorAll('input[type="text"]')).map(i => i.value);
+                const pwd = document.querySelector('input[type="password"]');
+                return {texts: texts, pwdLen: pwd ? pwd.value.length : 0};
+            }""")
+            with print_lock:
+                print(f"{CYAN}[Browser] Field values: {vals['texts']} pwd_len={vals['pwdLen']}{WHITE}")
+        except Exception:
+            pass
+
         # Submit - try multiple selectors
         with print_lock:
             print(f"{YELLOW}[Browser] Submitting form...{WHITE}")
