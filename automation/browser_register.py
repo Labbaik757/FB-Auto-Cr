@@ -219,8 +219,40 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         page.goto("https://www.facebook.com/reg/", wait_until="domcontentloaded")
         _human_pause(2.0, 4.0)
 
+        # Debug: check what page actually loaded
+        with print_lock:
+            print(f"{CYAN}[Browser] Page URL: {page.url}{WHITE}")
+            print(f"{CYAN}[Browser] Page title: {page.title()}{WHITE}")
+
+        # Wait for firstname field with fallback selectors
+        firstname_selectors = [
+            'input[name="firstname"]',
+            '#u_0_2',
+            'input[aria-label*="First name"]',
+            'input[placeholder*="First name"]',
+        ]
+        firstname_found = None
+        for sel in firstname_selectors:
+            try:
+                page.wait_for_selector(sel, timeout=10000)
+                firstname_found = sel
+                with print_lock:
+                    print(f"{GREEN}[Browser] Found firstname field: {sel}{WHITE}")
+                break
+            except Exception:
+                continue
+
+        if not firstname_found:
+            # Save screenshot for debugging
+            page.screenshot(path="fb_reg_debug.png")
+            with print_lock:
+                print(f"{RED}[Browser] Firstname field not found. Screenshot saved: fb_reg_debug.png{WHITE}")
+                print(f"{RED}[Browser] Page content preview: {page.content()[:500]}{WHITE}")
+            counter.update("failed")
+            return {"status": "failed", "number": phone_number, "reason": "firstname field not found"}
+
         # Fill first name
-        _human_type(page, 'input[name="firstname"]', first_name)
+        _human_type(page, firstname_found, first_name)
 
         # Fill last name
         _human_type(page, 'input[name="lastname"]', last_name)
@@ -260,7 +292,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 print(f"{GREEN}[Browser] SUCCESS: {c_user}{WHITE}")
 
             if counter:
-                counter.increment("success")
+                counter.update("success")
 
             return {
                 "status": "success",
@@ -314,7 +346,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         if c_user:
                             cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
                             if counter:
-                                counter.increment("success")
+                                counter.update("success")
                             return {
                                 "status": "success",
                                 "uid": c_user,
@@ -327,7 +359,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         print(f"{RED}[Browser] Code submission error: {e}{WHITE}")
 
             if counter:
-                counter.increment("failed")
+                counter.update("failed")
             return {"status": "failed", "reason": "verification_required"}
 
         # Unknown state
@@ -335,7 +367,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"{RED}[Browser] FAILED: Unknown state for {phone_number}{WHITE}")
 
         if counter:
-            counter.increment("failed")
+            counter.update("failed")
         return {"status": "failed", "reason": "unknown_state"}
 
     except Exception as e:
@@ -343,7 +375,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"{RED}[Browser] ERROR for {phone_number}: {e}{WHITE}")
 
         if counter:
-            counter.increment("error")
+            counter.update("error")
         return {"status": "error", "reason": str(e)}
 
 
