@@ -41,9 +41,9 @@ def _human_pause(min_s=1.0, max_s=3.0):
 def _human_type(page, selector, text, min_delay=80, max_delay=250):
     """
     Type text character by character with random delays,
-    like a human typing.
+    like a human typing. Accepts CSS selector string or Locator.
     """
-    element = page.locator(selector)
+    element = selector if hasattr(selector, "click") else page.locator(selector)
     element.click()
     _human_pause(0.3, 0.8)
     for char in text:
@@ -224,23 +224,23 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             print(f"{CYAN}[Browser] Page URL: {page.url}{WHITE}")
             print(f"{CYAN}[Browser] Page title: {page.title()}{WHITE}")
 
-        # Wait for firstname field with fallback selectors
-        firstname_selectors = [
-            'input[name="firstname"]',
-            '#u_0_2',
-            'input[aria-label*="First name"]',
-            'input[placeholder*="First name"]',
-        ]
-        firstname_found = None
-        for sel in firstname_selectors:
-            try:
-                page.wait_for_selector(sel, timeout=10000)
-                firstname_found = sel
-                with print_lock:
-                    print(f"{GREEN}[Browser] Found firstname field: {sel}{WHITE}")
-                break
-            except Exception:
-                continue
+        # Facebook now uses dynamic IDs with no name attributes.
+        # Fields by position: 3 text inputs (first, last, phone) + 1 password input.
+        try:
+            page.wait_for_selector('input[type="text"]', timeout=15000)
+            text_inputs = page.locator('input[type="text"]')
+            pwd_inputs = page.locator('input[type="password"]')
+            n_text = text_inputs.count()
+            n_pwd = pwd_inputs.count()
+            with print_lock:
+                print(f"{GREEN}[Browser] Found {n_text} text inputs, {n_pwd} password inputs{WHITE}")
+            if n_text < 3 or n_pwd < 1:
+                raise Exception(f"Expected 3+ text and 1+ password inputs, got {n_text}/{n_pwd}")
+            firstname_found = True
+        except Exception as e:
+            firstname_found = False
+            with print_lock:
+                print(f"{RED}[Browser] Form fields error: {e}{WHITE}")
 
         if not firstname_found:
             # Save screenshot and dump all input fields for debugging
@@ -262,17 +262,11 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             counter.update("failed")
             return {"status": "failed", "number": phone_number, "reason": "firstname field not found"}
 
-        # Fill first name
-        _human_type(page, firstname_found, first_name)
-
-        # Fill last name
-        _human_type(page, 'input[name="lastname"]', last_name)
-
-        # Fill phone number
-        _human_type(page, 'input[name="reg_email__"]', phone_number)
-
-        # Fill password
-        _human_type(page, 'input[name="reg_passwd__"]', password)
+        # Fill by position: 1st text=firstname, 2nd text=lastname, 3rd text=phone, 1st password=password
+        _human_type(page, text_inputs.nth(0), first_name)
+        _human_type(page, text_inputs.nth(1), last_name)
+        _human_type(page, text_inputs.nth(2), phone_number)
+        _human_type(page, pwd_inputs.nth(0), password)
 
         # Select birthday
         _select_birthday(page, birth_date.day, birth_month, birth_date.year)
