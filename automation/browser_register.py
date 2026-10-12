@@ -48,8 +48,8 @@ from core.counter import Counter
 
 
 def _human_pause(min_s=1.0, max_s=3.0):
-    """Random pause to mimic human behavior."""
-    time.sleep(random.uniform(min_s, max_s))
+    """Disabled - user wants no waits except between accounts."""
+    pass
 
 
 def _human_type(page, selector, text, min_delay=80, max_delay=250):
