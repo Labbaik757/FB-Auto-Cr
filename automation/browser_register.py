@@ -48,8 +48,8 @@ from core.counter import Counter
 
 
 def _human_pause(min_s=1.0, max_s=3.0):
-    """Disabled - user wants no waits except between accounts."""
-    pass
+    """Fixed 1 second pause per user."""
+    time.sleep(1.0)
 
 
 def _human_type(page, selector, text, min_delay=80, max_delay=250):
@@ -539,7 +539,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                             _human_pause(2.0, 3.0)
                             with print_lock:
                                 print(f"{GREEN}[Browser] Profile opened: {page.url}{WHITE}")
-                            # Move to next account immediately
+                            time.sleep(4.0)  # 4s after profile per user
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
