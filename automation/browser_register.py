@@ -243,13 +243,37 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                      "lion", "wolf", "boss", "admin", "test", "demo", "user",
                      "facebook", "fb", "meta", "official", "real", "fake"}
 
+    # Name-based gender lists (per user reference)
+    MALE_NAMES = {
+        "james", "john", "robert", "michael", "william", "david",
+        "joseph", "daniel", "matthew", "andrew", "ryan", "alexander",
+        "chris", "kevin", "jason", "brian", "steve", "mark", "paul",
+        "george", "henry", "jack", "oliver", "leo", "sam", "ben",
+        "thomas", "liam", "noah", "ethan", "jacob", "lucas", "mason"
+    }
+    FEMALE_NAMES = {
+        "mary", "emma", "sophia", "olivia", "isabella", "mia",
+        "ava", "lily", "emily", "sarah", "jessica", "anna",
+        "lisa", "kate", "jennifer", "rachel", "laura", "julia",
+        "hannah", "amelia", "chloe", "grace", "ella", "ruby",
+        "zoe", "lucy", "eva", "nora", "ivy", "aria", "sofia"
+    }
+
+    def gender_from_name(first_name: str) -> str:
+        name = first_name.strip().lower()
+        if name in MALE_NAMES:
+            return "Male"
+        if name in FEMALE_NAMES:
+            return "Female"
+        return "Male"  # default
+
     # Generate identity (skip blocked names)
     for _ in range(20):
         first_name = fake.first_name()
         last_name = fake.last_name()
         if first_name.lower() not in BLOCKED_NAMES and last_name.lower() not in BLOCKED_NAMES:
             break
-    gender = random.choice(["Female", "Male"])
+    gender = gender_from_name(first_name)
 
     # Birthday: 18-40 years old (matches HTTP version)
     birth_date = fake.date_of_birth(minimum_age=18, maximum_age=40)
