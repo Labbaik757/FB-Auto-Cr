@@ -68,35 +68,35 @@ Output ONLY the reviews, one per line, no numbering."""
     return cleaned[:needed]
 
 
-def fb_login(page, uid, password):
-    """Login to Facebook with uid/email + password."""
-    page.goto("https://www.facebook.com/login", wait_until="domcontentloaded", timeout=30000)
-    _human_pause(1.0, 2.0)
+def fb_login(context, page, cookie_str):
+    """Login to Facebook directly via saved cookies (safer than password)."""
     try:
-        page.get_by_label("Email or phone").fill(uid)
-    except Exception:
-        page.locator('input[name="email"]').fill(uid)
-    _human_pause(0.5, 1.0)
-    try:
-        page.get_by_label("Password").fill(password)
-    except Exception:
-        page.locator('input[name="pass"]').fill(password)
-    _human_pause(0.5, 1.0)
-    try:
-        page.get_by_role("button", name="Log in", exact=True).click()
-    except Exception:
-        page.keyboard.press("Enter")
-    # Wait for login (feed or checkpoint)
-    for _ in range(20):
-        try:
-            url = page.url
-            if "login" not in url or "checkpoint" in url:
-                break
-        except Exception:
-            pass
-        time.sleep(1.0)
+        cookies = []
+        for pair in cookie_str.split(";"):
+            pair = pair.strip()
+            if "=" not in pair:
+                continue
+            name, value = pair.split("=", 1)
+            cookies.append({
+                "name": name.strip(),
+                "value": value.strip(),
+                "domain": ".facebook.com",
+                "path": "/",
+            })
+        context.add_cookies(cookies)
+    except Exception as e:
+        with print_lock:
+            print(f"{RED}[Reviews] Cookie load failed: {e}{WHITE}")
+        return False
+    # Verify by opening Facebook
+    page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=30000)
     time.sleep(random.uniform(2.0, 3.0))
-    return "checkpoint" not in page.url
+    try:
+        url = page.url
+        # Logged in = not on login page
+        return "login" not in url
+    except Exception:
+        return False
 
 
 def submit_review(page, page_url, review_text, stars=5):
@@ -208,7 +208,11 @@ def main():
         done = 0
         for acc_line, review in test_pairs:
             parts = acc_line.split("|")
-            uid, password = parts[0], parts[1]
+            uid = parts[0]
+            cookie_str = parts[2] if len(parts) > 2 else ""
+            if not cookie_str:
+                print(f"{RED}[Reviews] No cookies for {uid}, skipping{WHITE}")
+                continue
             print(f"\n{CYAN}--- Account: {uid} ---{WHITE}")
 
             _vp = random.choice([(1366, 768), (1920, 1080), (1536, 864)])
@@ -223,10 +227,10 @@ def main():
             page = context.new_page()
 
             try:
-                if not fb_login(page, uid, password):
-                    print(f"{RED}[Reviews] Login failed for {uid}{WHITE}")
+                if not fb_login(context, page, cookie_str):
+                    print(f"{RED}[Reviews] Cookie login failed for {uid}{WHITE}")
                     continue
-                print(f"{GREEN}[Reviews] Logged in: {uid}{WHITE}")
+                print(f"{GREEN}[Reviews] Logged in via cookies: {uid}{WHITE}")
 
                 if submit_review(page, page_url, review):
                     print(f"{GREEN}[Reviews] Review submitted for {uid}{WHITE}")
