@@ -21,12 +21,17 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 def main():
     print(f"{CYAN}=== Review UI Inspector ==={WHITE}")
 
-    acc_path = os.path.join(BASE, "output", "browser_accounts.txt")
-    with open(acc_path) as f:
-        accounts = [l.strip() for l in f if l.strip()]
-    parts = accounts[0].split("|")
-    uid, cookie_str = parts[0], parts[2] if len(parts) > 2 else ""
-    print(f"{CYAN}Using account: {uid}{WHITE}")
+    # Live cookie paste (like custom password)
+    print(f"{CYAN}Paste Facebook cookies (c_user=...; xs=...; etc) and press Enter:{WHITE}")
+    cookie_str = input().strip()
+    if not cookie_str:
+        # Fallback: first account from file
+        acc_path = os.path.join(BASE, "output", "browser_accounts.txt")
+        with open(acc_path) as f:
+            accounts = [l.strip() for l in f if l.strip()]
+        parts = accounts[0].split("|")
+        cookie_str = parts[2] if len(parts) > 2 else ""
+        print(f"{CYAN}Using saved cookies from file{WHITE}")
 
     page_url = input(f"{CYAN}Paste Facebook Page Link: {WHITE}").strip()
 
