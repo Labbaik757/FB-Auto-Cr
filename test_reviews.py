@@ -99,26 +99,37 @@ def fb_login(context, page, cookie_str):
         return False
 
 
-def submit_review(page, page_url, review_text, stars=5):
-    """Navigate to page, open Reviews, submit star rating + text."""
+def submit_review(page, page_url, review_text):
+    """Navigate to page, open Reviews, select Yes, paste review, post.
+    Returns True only if submission is verified."""
     page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
     _human_pause(2.0, 3.0)
     # Go to Reviews tab
     try:
         page.get_by_role("link", name="Reviews").first.click(timeout=5000)
     except Exception:
-        # Try URL-based reviews page
         base = page_url.rstrip("/")
         page.goto(base + "/reviews", wait_until="domcontentloaded", timeout=30000)
     _human_pause(2.0, 3.0)
-    # Click star rating
+
+    # Select "Yes" (recommend this page)
     try:
-        stars_btn = page.get_by_role("button", name=f"{stars} star").first
-        _human_click(page, stars_btn)
-    except Exception:
+        yes_btn = page.get_by_role("radio", name="Yes").first
+        _human_click(page, yes_btn)
         with print_lock:
-            print(f"{YELLOW}[Reviews] Star button not found, trying generic{WHITE}")
+            print(f"{CYAN}[Reviews] Selected Yes{WHITE}")
+    except Exception:
+        try:
+            yes_btn = page.get_by_text("Yes", exact=True).first
+            _human_click(page, yes_btn)
+            with print_lock:
+                print(f"{CYAN}[Reviews] Selected Yes (text){WHITE}")
+        except Exception as e:
+            with print_lock:
+                print(f"{RED}[Reviews] Yes option not found: {e}{WHITE}")
+            return False
     _human_pause(1.0, 2.0)
+
     # Write review text
     try:
         textbox = page.get_by_role("textbox").first
@@ -128,18 +139,44 @@ def submit_review(page, page_url, review_text, stars=5):
             print(f"{RED}[Reviews] Textbox failed: {e}{WHITE}")
         return False
     _human_pause(1.0, 2.0)
+
     # Submit
-    try:
-        _human_click(page, page.get_by_role("button", name="Post").first)
-    except Exception:
+    submitted = False
+    for btn_name in ["Post", "Submit", "Share"]:
         try:
-            _human_click(page, page.get_by_role("button", name="Submit").first)
-        except Exception as e:
+            _human_click(page, page.get_by_role("button", name=btn_name).first)
+            submitted = True
+            break
+        except Exception:
+            continue
+    if not submitted:
+        with print_lock:
+            print(f"{RED}[Reviews] Submit button not found{WHITE}")
+        return False
+
+    time.sleep(random.uniform(3.0, 5.0))
+
+    # Verify: check if review appears or success message
+    try:
+        page_content = page.content().lower()
+        if review_text[:20].lower() in page_content:
             with print_lock:
-                print(f"{RED}[Reviews] Submit failed: {e}{WHITE}")
-            return False
-    time.sleep(random.uniform(2.0, 4.0))
-    return True
+                print(f"{GREEN}[Reviews] Verified: review text found on page{WHITE}")
+            return True
+    except Exception:
+        pass
+    # If textbox is gone/empty, likely submitted
+    try:
+        textbox = page.get_by_role("textbox").first
+        if textbox.input_value() == "":
+            with print_lock:
+                print(f"{GREEN}[Reviews] Verified: textbox cleared after post{WHITE}")
+            return True
+    except Exception:
+        pass
+    with print_lock:
+        print(f"{YELLOW}[Reviews] Could not verify submission{WHITE}")
+    return False
 
 
 def main():
