@@ -45,13 +45,13 @@ def run_create():
     # Mode selection: HTTP (default) or Browser automation
     print(f" {GREEN}[{RED}01{GREEN}] HTTP Mode {WHITE}(Fast, direct requests)")
     print(f" {GREEN}[{RED}02{GREEN}] Browser Mode {WHITE}(Playwright, human-like, slower)")
-    print(f" {GREEN}[{RED}03{GREEN}] Reviews Mode {WHITE}(Auto post page reviews)")
+    print(f" {GREEN}[{RED}03{GREEN}] Facebook Automation {WHITE}(Reviews, marketplace & more)")
     print(f"{LINE}")
     mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2/3) [1] {EKL} ").strip()
     if mode_choice == "3":
-        # Reviews mode: auto post page reviews (does not touch mode 1/2)
-        from automation.reviews import run_reviews_mode
-        config_state["mode"] = "Reviews"
+        # Facebook Automation: reviews, marketplace & more (does not touch mode 1/2)
+        from automation.fb_automation import run_reviews_mode
+        config_state["mode"] = "Facebook Automation"
         render_config(config_state)
         run_reviews_mode()
         input(f"\n {WHITE}Press Enter to exit... ")
