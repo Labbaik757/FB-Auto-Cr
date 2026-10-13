@@ -175,8 +175,8 @@ def _parse_number_entry(entry):
     return entry, None
 
 
-def _apply_fingerprint_spoof(context):
-    """Inject canvas/WebGL fingerprint spoofing. Each account gets a different fingerprint."""
+def _apply_fingerprint_spoof(context, chrome_ver="120.0.0.0"):
+    """Inject canvas/WebGL/navigator/client-hints spoofing. Each account gets a different fingerprint."""
     import random as _rand
     # Random GPU from common list (per-account)
     _gpus = [
@@ -226,6 +226,36 @@ def _apply_fingerprint_spoof(context):
             if (param === 37446) return _renderer;
             return _origGetParam2.apply(this, arguments);
         }};
+        // --- Client hints spoof (match spoofed UA) ---
+        try {{
+            var _cvm = "{chrome_ver}".split(".")[0];
+            var _brands = [
+                {{ brand: "Chromium", version: _cvm }},
+                {{ brand: "Google Chrome", version: _cvm }},
+                {{ brand: "Not-A.Brand", version: "99" }}
+            ];
+            Object.defineProperty(navigator, 'userAgentData', {{
+                get: function() {{
+                    return {{
+                        brands: _brands,
+                        mobile: false,
+                        platform: "Windows",
+                        getHighEntropyValues: function(hints) {{
+                            return Promise.resolve({{
+                                brands: _brands,
+                                mobile: false,
+                                platform: "Windows",
+                                platformVersion: "15.0.0",
+                                architecture: "x86",
+                                bitness: "64",
+                                model: "",
+                                uaFullVersion: "{chrome_ver}"
+                            }});
+                        }}
+                    }};
+                }}
+            }});
+        }} catch (e) {{}}
         // --- Navigator spoof ---
         try {{
             Object.defineProperty(navigator, 'webdriver', {{ get: function() {{ return false; }} }});
@@ -434,8 +464,11 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         _fields = [(text_inputs.nth(0), first_name), (text_inputs.nth(1), last_name),
                    (text_inputs.nth(2), phone_number), (pwd_inputs.nth(0), password)]
         random.shuffle(_fields)
-        for _loc, _val in _fields:
+        _think_at = random.randint(1, 3)  # Random thinking pause position
+        for _fi, (_loc, _val) in enumerate(_fields):
             _human_type(page, _loc, _val)
+            if _fi == _think_at:
+                time.sleep(random.uniform(3.0, 5.0))  # Human thinking pause
 
         # Select birthday
         dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
@@ -808,7 +841,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                     locale="en-US",
                 )
                 # Fingerprint spoofing: canvas noise + WebGL GPU spoof (per-account random)
-                _apply_fingerprint_spoof(context)
+                _apply_fingerprint_spoof(context, _cv)
                 page = context.new_page()
 
                 try:
