@@ -36,6 +36,38 @@ def read_lines(path):
         return [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
 
 
+def gemini_variations(reviews, needed, api_key):
+    """Use Gemini to expand few reviews into many unique variations."""
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        print(f"{YELLOW}Installing google-generativeai...{WHITE}")
+        os.system(f"{sys.executable} -m pip install google-generativeai -q")
+        import google.generativeai as genai
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.0-flash")
+
+    base = "\n".join([f"{i+1}. {r}" for i, r in enumerate(reviews)])
+    prompt = f"""You are a review writer. Given these sample reviews:
+{base}
+
+Generate {needed} UNIQUE review variations. Same positive meaning, different wording each time.
+Natural human tone, varied length (some short, some 2 sentences).
+Output ONLY the reviews, one per line, no numbering."""
+
+    resp = model.generate_content(prompt)
+    lines = [l.strip() for l in resp.text.strip().split("\n") if l.strip()]
+    # Clean numbering if present
+    cleaned = []
+    for l in lines:
+        import re
+        l = re.sub(r"^\d+[.\)]\s*", "", l)
+        if l:
+            cleaned.append(l)
+    return cleaned[:needed]
+
+
 def fb_login(page, uid, password):
     """Login to Facebook with uid/email + password."""
     page.goto("https://www.facebook.com/login", wait_until="domcontentloaded", timeout=30000)
@@ -123,6 +155,27 @@ def main():
         print(f"{RED}No reviews in reviews.txt - paste client list there{WHITE}")
         return
 
+    # Ask how many reviews needed
+    try:
+        need = int(input(f"{CYAN}How many reviews needed? {WHITE}").strip())
+    except Exception:
+        need = len(reviews)
+
+    # Gemini expands if needed > available
+    if need > len(reviews):
+        print(f"{CYAN}Need {need}, have {len(reviews)} - asking Gemini for variations...{WHITE}")
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            api_key = input(f"{CYAN}Enter Gemini API Key: {WHITE}").strip()
+        if api_key:
+            reviews = gemini_variations(reviews, need, api_key)
+            print(f"{GREEN}Gemini generated {len(reviews)} unique reviews{WHITE}")
+        else:
+            print(f"{YELLOW}No API key - using available reviews only{WHITE}")
+            need = len(reviews)
+    else:
+        reviews = reviews[:need]
+
     # Live input: paste page link in terminal (like custom password)
     page_url = input(f"{CYAN}Paste Facebook Page Link and press Enter: {WHITE}").strip()
     if not page_url:
@@ -131,7 +184,7 @@ def main():
     print(f"{CYAN}Page: {page_url}{WHITE}")
     print(f"{CYAN}Accounts: {len(accounts)}, Reviews: {len(reviews)}{WHITE}")
 
-    # Test with first 2 accounts
+    # Pair accounts with reviews (test mode: max 2)
     test_pairs = list(zip(accounts[:2], reviews[:2]))
 
     with sync_playwright() as p:
