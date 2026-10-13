@@ -174,19 +174,54 @@ def submit_review(page, page_url, review_text):
             print(f"{RED}[Reviews] Post button not found: {e}{WHITE}")
         return False
 
-    time.sleep(random.uniform(3.0, 5.0))
+    # Wait for dialog to CLOSE = real submission signal (up to 20 sec)
+    _submitted = False
+    for _i in range(20):
+        time.sleep(1)
+        try:
+            if _dialog.count() == 0 or not _dialog.is_visible():
+                _submitted = True
+                break
+        except Exception:
+            _submitted = True  # dialog gone = submitted
+            break
+    if not _submitted:
+        with print_lock:
+            print(f"{RED}[Reviews] Dialog did not close - Post may have failed{WHITE}")
+        # Try clicking Post once more
+        try:
+            _post2 = page.get_by_role("button", name="Post", exact=True).first
+            if _post2.count() > 0 and _post2.is_visible(timeout=3000):
+                _human_click(page, _post2)
+                with print_lock:
+                    print(f"{YELLOW}[Reviews] Retried Post click{WHITE}")
+                time.sleep(5)
+                try:
+                    if _dialog.count() == 0 or not _dialog.is_visible():
+                        _submitted = True
+                except Exception:
+                    _submitted = True
+        except Exception:
+            pass
+    if not _submitted:
+        with print_lock:
+            print(f"{RED}[Reviews] FAILED: review not submitted{WHITE}")
+        return False
 
-    # Verify: review text appears on page
+    # Dialog closed - now verify review appears on page (dialog is gone)
+    time.sleep(random.uniform(2.0, 4.0))
     try:
-        if review_text[:20].lower() in page.content().lower():
+        _page_text = page.content().lower()
+        if review_text[:20].lower() in _page_text:
             with print_lock:
                 print(f"{GREEN}[Reviews] VERIFIED: review found on page{WHITE}")
             return True
     except Exception:
         pass
+    # Dialog closed = submitted even if text not found (may need refresh)
     with print_lock:
-        print(f"{YELLOW}[Reviews] Could not verify - check manually{WHITE}")
-    return False
+        print(f"{GREEN}[Reviews] Submitted (dialog closed){WHITE}")
+    return True
 
 def main():
     print(f"{CYAN}=== Fb Reviews Automation TEST ==={WHITE}")
