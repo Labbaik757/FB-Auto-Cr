@@ -164,53 +164,20 @@ def submit_review(page, page_url, review_text):
     _human_pause(1.0, 2.0)
 
     # Set privacy to Public (else review stays Friends-only, not public)
-    _priv_done = False
-    for _priv_sel in [
-        lambda: _dialog.get_by_role("button", name="Friends").first,
-        lambda: _dialog.locator('[aria-label*="Edit privacy"]').first,
-        lambda: _dialog.locator('[aria-label*="Sharing with"]').first,
-    ]:
-        try:
-            _priv = _priv_sel()
-            _priv.wait_for(state="visible", timeout=5000)
-            _human_click(page, _priv)
-            time.sleep(2)
-            # Try Public option (multiple strategies)
-            _pub_clicked = False
-            for _pub_sel in [
-                lambda: page.get_by_role("button", name="Public").first,
-                lambda: page.get_by_role("menuitem", name="Public").first,
-                lambda: page.locator('[role="menuitem"]').filter(has_text="Public").first,
-                lambda: page.get_by_text("Public", exact=True).first,
-            ]:
-                try:
-                    _pub = _pub_sel()
-                    _pub.wait_for(state="visible", timeout=5000)
-                    _human_click(page, _pub)
-                    _pub_clicked = True
-                    break
-                except Exception:
-                    continue
-            time.sleep(2)
-            if _pub_clicked:
-                with print_lock:
-                    print(f"{GREEN}[Reviews] Privacy set to Public{WHITE}")
-                _priv_done = True
-                break
-            else:
-                with print_lock:
-                    print(f"{YELLOW}[Reviews] Public option not found, retrying{WHITE}")
-                # Close dropdown by pressing Escape, try next selector
-                try:
-                    page.keyboard.press("Escape")
-                    time.sleep(1)
-                except Exception:
-                    pass
-        except Exception:
-            continue
-    if not _priv_done:
+    try:
+        _priv = _dialog.get_by_role("button", name="Edit privacy").first
+        _priv.wait_for(state="visible", timeout=10000)
+        _human_click(page, _priv)
+        time.sleep(2)
+        _pub = page.get_by_role("button", name="Public", exact=True).first
+        _pub.wait_for(state="visible", timeout=10000)
+        _human_click(page, _pub)
+        time.sleep(2)
         with print_lock:
-            print(f"{YELLOW}[Reviews] Privacy change skipped - review may be Friends-only{WHITE}")
+            print(f"{CYAN}[Reviews] Privacy set to Public{WHITE}")
+    except Exception as e:
+        with print_lock:
+            print(f"{YELLOW}[Reviews] Privacy change skipped: {e}{WHITE}")
 
     # Click Post (exact name "Post")
     try:
