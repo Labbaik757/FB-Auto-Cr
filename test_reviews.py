@@ -163,31 +163,21 @@ def submit_review(page, page_url, review_text):
         return False
     _human_pause(1.0, 2.0)
 
-    # Set privacy to Public (default is Friends)
-    # Button aria-label = "Edit privacy. Sharing with Your friends."
+    # Set privacy to Public (else review stays Friends-only, not public)
     try:
-        _priv = _dialog.locator('[aria-label*="Edit privacy"]').first
-        if _priv.count() > 0 and _priv.is_visible(timeout=5000):
-            _human_click(page, _priv)
-            _human_pause(1.5, 2.5)
-            # Select Public from the dropdown menu
-            _pub = page.get_by_role("menuitem", name="Public").first
-            if _pub.count() == 0 or not _pub.is_visible(timeout=3000):
-                _pub = page.locator('[role="menuitem"]').filter(has_text="Public").first
-            if _pub.count() == 0:
-                _pub = page.get_by_text("Public", exact=True).first
-            _human_click(page, _pub)
-            _human_pause(1.0, 2.0)
-            # Verify it changed
-            _check = _dialog.locator('[aria-label*="Edit privacy"]').first.get_attribute("aria-label") or ""
-            with print_lock:
-                print(f"{GREEN}[Reviews] Privacy now: {_check[:60]}{WHITE}")
-        else:
-            with print_lock:
-                print(f"{YELLOW}[Reviews] Privacy button not found{WHITE}")
+        _priv = _dialog.get_by_role("button", name="Friends", exact=True).first
+        _priv.wait_for(state="visible", timeout=10000)
+        _human_click(page, _priv)
+        time.sleep(2)
+        _pub = page.get_by_role("button", name="Public", exact=True).first
+        _pub.wait_for(state="visible", timeout=10000)
+        _human_click(page, _pub)
+        time.sleep(2)
+        with print_lock:
+            print(f"{CYAN}[Reviews] Privacy set to Public{WHITE}")
     except Exception as e:
         with print_lock:
-            print(f"{YELLOW}[Reviews] Privacy change failed: {str(e)[:80]}{WHITE}")
+            print(f"{YELLOW}[Reviews] Privacy change skipped: {e}{WHITE}")
 
     # Click Post (exact name "Post")
     try:
