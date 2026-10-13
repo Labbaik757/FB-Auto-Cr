@@ -131,22 +131,46 @@ def submit_review(page, page_url, review_text):
         return False
     _human_pause(2.0, 3.0)
 
-    # Select "Yes" (recommend this page)
-    try:
-        yes_btn = page.get_by_role("radio", name="Yes").first
-        _human_click(page, yes_btn)
-        with print_lock:
-            print(f"{CYAN}[Reviews] Selected Yes{WHITE}")
-    except Exception:
+    # Discover dialog UI: dump all radios/buttons in dialog
+    with print_lock:
+        print(f"{CYAN}[Reviews] Scanning dialog for Yes/No options...{WHITE}")
+    _yes_clicked = False
+    for _sel in ["Yes", "yes", "YES"]:
+        for _role in ["radio", "button"]:
+            try:
+                _el = page.get_by_role(_role, name=_sel, exact=True).first
+                if _el.count() > 0 and _el.is_visible(timeout=2000):
+                    _human_click(page, _el)
+                    _yes_clicked = True
+                    with print_lock:
+                        print(f"{GREEN}[Reviews] Clicked '{_sel}' ({_role}){WHITE}")
+                    break
+            except Exception:
+                continue
+        if _yes_clicked:
+            break
+    if not _yes_clicked:
+        # Fallback: any element with exact text "Yes"
         try:
-            yes_btn = page.get_by_text("Yes", exact=True).first
-            _human_click(page, yes_btn)
+            _el = page.get_by_text("Yes", exact=True).first
+            if _el.count() > 0 and _el.is_visible(timeout=2000):
+                _human_click(page, _el)
+                _yes_clicked = True
+                with print_lock:
+                    print(f"{GREEN}[Reviews] Clicked 'Yes' (text fallback){WHITE}")
+        except Exception:
+            pass
+    if not _yes_clicked:
+        # Last resort: dump what's actually in the dialog for debugging
+        try:
+            _dialog_text = page.locator('[role="dialog"]').first.inner_text()[:500]
             with print_lock:
-                print(f"{CYAN}[Reviews] Selected Yes (text){WHITE}")
-        except Exception as e:
-            with print_lock:
-                print(f"{RED}[Reviews] Yes option not found: {e}{WHITE}")
-            return False
+                print(f"{YELLOW}[Reviews] Dialog contents: {_dialog_text}{WHITE}")
+        except Exception:
+            pass
+        with print_lock:
+            print(f"{RED}[Reviews] Yes option NOT FOUND - cannot proceed{WHITE}")
+        return False
     _human_pause(1.0, 2.0)
 
     # Write review text
