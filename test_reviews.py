@@ -163,15 +163,21 @@ def submit_review(page, page_url, review_text):
         return False
     _human_pause(1.0, 2.0)
 
-    # Set privacy to Public (else review stays Friends-only, not public)
+    # Privacy -> Public (EXACT live-verified flow 2026-10-13)
     try:
-        _priv = _dialog.get_by_role("button", name="Edit privacy").first
+        _priv = _dialog.locator("[aria-label*='Edit privacy']").first
         _priv.wait_for(state="visible", timeout=10000)
         _human_click(page, _priv)
-        time.sleep(2)
-        _pub = page.get_by_role("button", name="Public", exact=True).first
+        time.sleep(3)
+        # Public is plain text, NOT a button
+        _pub = page.get_by_text("Public", exact=True).first
         _pub.wait_for(state="visible", timeout=10000)
         _human_click(page, _pub)
+        time.sleep(2)
+        # Done button confirms the selection (REQUIRED)
+        _done = page.get_by_role("button", name="Done", exact=True).first
+        _done.wait_for(state="visible", timeout=10000)
+        _human_click(page, _done)
         time.sleep(2)
         with print_lock:
             print(f"{CYAN}[Reviews] Privacy set to Public{WHITE}")
