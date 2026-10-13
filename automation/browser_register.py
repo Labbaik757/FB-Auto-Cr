@@ -468,7 +468,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         for _fi, (_loc, _val) in enumerate(_fields):
             _human_type(page, _loc, _val)
             if _fi == _think_at:
-                time.sleep(random.uniform(3.0, 5.0))  # Human thinking pause
+                time.sleep(random.uniform(1.0, 3.0))  # Human thinking pause
 
         # Select birthday
         dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
