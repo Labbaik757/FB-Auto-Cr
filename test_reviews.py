@@ -104,12 +104,31 @@ def submit_review(page, page_url, review_text):
     Returns True only if submission is verified."""
     page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
     _human_pause(2.0, 3.0)
-    # Go to Reviews tab
-    try:
-        page.get_by_role("link", name="Reviews").first.click(timeout=5000)
-    except Exception:
-        base = page_url.rstrip("/")
-        page.goto(base + "/reviews", wait_until="domcontentloaded", timeout=30000)
+    # Open Recommendations/Reviews dialog
+    _opened = False
+    for _sel in ['See Recommendations', 'Reviews', 'Recommendations']:
+        try:
+            _btn = page.get_by_role("button", name=_sel).first
+            if _btn.count() > 0:
+                _human_click(page, _btn)
+                _opened = True
+                with print_lock:
+                    print(f"{CYAN}[Reviews] Opened via '{_sel}'{WHITE}")
+                break
+        except Exception:
+            continue
+    if not _opened:
+        # Try aria-label variant
+        try:
+            _btn = page.locator('[aria-label="See Recommendations"]').first
+            _human_click(page, _btn)
+            _opened = True
+        except Exception:
+            pass
+    if not _opened:
+        with print_lock:
+            print(f"{RED}[Reviews] Could not open recommendations dialog{WHITE}")
+        return False
     _human_pause(2.0, 3.0)
 
     # Select "Yes" (recommend this page)
