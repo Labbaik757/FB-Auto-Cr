@@ -188,7 +188,7 @@ def _click_resend_twice(page):
                     clicked += 1
                     with print_lock:
                         print(f"{CYAN}[Browser] Resend clicked ({clicked}/3){WHITE}")
-                    # No pause between resends - click back-to-back
+                    time.sleep(1.5)  # Human pause between resends
                     break
             except Exception:
                 continue
@@ -387,6 +387,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             submitted = True
             with print_lock:
                 print(f"{GREEN}[Browser] Submit done (navigated: {navigated}){WHITE}")
+            time.sleep(5.0)  # Human waits for OTP page to load
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Browser] Submit FAILED: {e}{WHITE}")
@@ -543,7 +544,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         with print_lock:
                             print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
                         continue_btn.click()
-                        _human_pause(3.0, 5.0)
+                        time.sleep(5.0)  # Human waits for profile to load
                         navigated = True
                     except Exception as e:
                         with print_lock:
