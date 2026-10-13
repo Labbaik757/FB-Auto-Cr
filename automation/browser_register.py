@@ -506,7 +506,21 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             submitted = True
             with print_lock:
                 print(f"{GREEN}[Browser] Submit done (navigated: {navigated}){WHITE}")
-            time.sleep(5.0)  # Human waits for OTP page to load
+            # Smart wait: proceed as soon as OTP page/input appears (max 15s)
+            _otp_ready = False
+            for _ in range(30):
+                try:
+                    _url = page.url.lower()
+                    if "confirm" in _url or "checkpoint" in _url or "otp" in _url:
+                        _otp_ready = True
+                        break
+                    if page.get_by_label("Confirmation code", exact=True).count() > 0:
+                        _otp_ready = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            time.sleep(1.0)  # Small settle after OTP page detected
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Browser] Submit FAILED: {e}{WHITE}")
