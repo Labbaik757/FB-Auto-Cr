@@ -697,7 +697,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                             _human_pause(2.0, 3.0)
                             with print_lock:
                                 print(f"{GREEN}[Browser] Profile opened: {page.url}{WHITE}")
-                            time.sleep(random.uniform(3.5, 5.0))  # ~4s after profile per user
+                            time.sleep(random.choice([3, 4, 5]))  # Profile open: 3/4/5 sec random
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
