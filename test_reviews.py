@@ -210,17 +210,43 @@ def submit_review(page, page_url, review_text):
 
     # Dialog closed - now verify review appears on page (dialog is gone)
     time.sleep(random.uniform(2.0, 4.0))
+    _verified = False
     try:
         _page_text = page.content().lower()
         if review_text[:20].lower() in _page_text:
-            with print_lock:
-                print(f"{GREEN}[Reviews] VERIFIED: review found on page{WHITE}")
-            return True
+            _verified = True
     except Exception:
         pass
-    # Dialog closed = submitted even if text not found (may need refresh)
-    with print_lock:
-        print(f"{GREEN}[Reviews] Submitted (dialog closed){WHITE}")
+
+    # VISUAL CONFIRM: scroll review to center of screen, keep open 8 sec
+    try:
+        _review_el = page.get_by_text(review_text[:30]).first
+        if _review_el.count() > 0:
+            _review_el.scroll_into_view_if_needed(timeout=5000)
+            # Center it exactly
+            page.evaluate("""el => {
+                const r = el.getBoundingClientRect();
+                window.scrollBy(0, r.top - window.innerHeight/2 + r.height/2);
+            }""", _review_el.element_handle(timeout=5000))
+            with print_lock:
+                print(f"{GREEN}[Reviews] Review visible on screen - showing for 8 sec{WHITE}")
+            time.sleep(8)
+            _verified = True
+        else:
+            # Fallback: scroll page to reviews section
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.3)")
+            time.sleep(8)
+    except Exception as e:
+        with print_lock:
+            print(f"{YELLOW}[Reviews] Visual scroll failed: {str(e)[:60]}{WHITE}")
+        time.sleep(5)
+
+    if _verified:
+        with print_lock:
+            print(f"{GREEN}[Reviews] VERIFIED: review live on page{WHITE}")
+    else:
+        with print_lock:
+            print(f"{GREEN}[Reviews] Submitted (dialog closed){WHITE}")
     return True
 
 def main():
