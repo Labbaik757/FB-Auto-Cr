@@ -141,6 +141,65 @@ def _parse_number_entry(entry):
     return entry, None
 
 
+def _apply_fingerprint_spoof(context):
+    """Inject canvas/WebGL fingerprint spoofing. Each account gets a different fingerprint."""
+    import random as _rand
+    # Random GPU from common list (per-account)
+    _gpus = [
+        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 5700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+    ]
+    _vendor, _renderer = _rand.choice(_gpus)
+    _noise = _rand.randint(1, 10)
+
+    _js = f"""
+    (function() {{
+        const _noiseSeed = {_noise};
+        // --- Canvas spoof: subtle noise on toDataURL ---
+        const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        HTMLCanvasElement.prototype.toDataURL = function(...args) {{
+            try {{
+                const ctx = this.getContext('2d');
+                if (ctx) {{
+                    const w = this.width, h = this.height;
+                    if (w > 0 && h > 0) {{
+                        const img = ctx.getImageData(0, 0, w, h);
+                        const d = img.data;
+                        for (let i = 0; i < d.length; i += 4) {{
+                            d[i] = (d[i] + _noiseSeed) % 256;
+                        }}
+                        ctx.putImageData(img, 0, 0);
+                    }}
+                }}
+            }} catch (e) {{}}
+            return _origToDataURL.apply(this, args);
+        }};
+        // --- WebGL spoof: fake GPU vendor/renderer ---
+        const _vendor = "{_vendor}";
+        const _renderer = "{_renderer}";
+        const _origGetParam = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(param) {{
+            if (param === 37445) return _vendor;
+            if (param === 37446) return _renderer;
+            return _origGetParam.apply(this, arguments);
+        }};
+        const _origGetParam2 = WebGL2RenderingContext.prototype.getParameter;
+        WebGL2RenderingContext.prototype.getParameter = function(param) {{
+            if (param === 37445) return _vendor;
+            if (param === 37446) return _renderer;
+            return _origGetParam2.apply(this, arguments);
+        }};
+    }})();
+    """
+    try:
+        context.add_init_script(_js)
+    except Exception:
+        pass
+
+
 def _click_resend_twice(page):
     """Click resend code button 3 times back-to-back (triggers OTP delivery)."""
     # First: click the expander below Continue to reveal resend option
@@ -659,6 +718,8 @@ def run_browser_mode(numbers, password_config, counter=None):
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     locale="en-US",
                 )
+                # Fingerprint spoofing: canvas noise + WebGL GPU spoof (per-account random)
+                _apply_fingerprint_spoof(context)
                 page = context.new_page()
 
                 try:
