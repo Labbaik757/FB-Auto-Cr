@@ -782,6 +782,18 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         return {"status": "error", "reason": str(e)}
 
 
+def _launch_browser(p, _launch_kwargs, _exe):
+    """Launch real Google Chrome; fall back to manual Chromium if unavailable."""
+    _chrome_kw = {k: v for k, v in _launch_kwargs.items() if k != "executable_path"}
+    try:
+        return p.chromium.launch(channel="chrome", **_chrome_kw)
+    except Exception:
+        _fb_kw = dict(_launch_kwargs)
+        if os.path.exists(_exe):
+            _fb_kw["executable_path"] = _exe
+        return p.chromium.launch(**_fb_kw)
+
+
 def run_browser_mode(numbers, password_config, counter=None):
     """
     Run browser automation for a list of numbers (sequential, one by one).
@@ -817,9 +829,7 @@ def run_browser_mode(numbers, password_config, counter=None):
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
         )
-        if os.path.exists(_exe):
-            _launch_kwargs["executable_path"] = _exe
-        browser = p.chromium.launch(**_launch_kwargs)
+        browser = _launch_browser(p, _launch_kwargs, _exe)
         _accounts_since_restart = 0
 
         try:
@@ -833,7 +843,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                     except Exception:
                         pass
                     time.sleep(random.uniform(1.5, 3.0))
-                    browser = p.chromium.launch(**_launch_kwargs)
+                    browser = _launch_browser(p, _launch_kwargs, _exe)
                     _accounts_since_restart = 0
                 number, sms_url = _parse_number_entry(entry)
                 if not number:
