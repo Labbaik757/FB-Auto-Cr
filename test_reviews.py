@@ -163,6 +163,24 @@ def submit_review(page, page_url, review_text):
         return False
     _human_pause(1.0, 2.0)
 
+    # Set privacy to Public (default is Friends)
+    try:
+        _priv = _dialog.get_by_role("button", name="Friends", exact=True).first
+        if _priv.count() > 0:
+            _human_click(page, _priv)
+            _human_pause(1.0, 2.0)
+            # Select Public from dropdown
+            _pub = page.get_by_role("menuitem", name="Public").first
+            if _pub.count() == 0:
+                _pub = page.get_by_text("Public", exact=True).first
+            _human_click(page, _pub)
+            with print_lock:
+                print(f"{GREEN}[Reviews] Privacy set to Public{WHITE}")
+            _human_pause(1.0, 2.0)
+    except Exception as e:
+        with print_lock:
+            print(f"{YELLOW}[Reviews] Privacy change skipped: {str(e)[:60]}{WHITE}")
+
     # Click Post (exact name "Post")
     try:
         _post = _dialog.get_by_role("button", name="Post", exact=True).first
