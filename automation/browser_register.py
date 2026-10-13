@@ -784,14 +784,22 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
 
 def _launch_browser(p, _launch_kwargs, _exe):
     """Launch real Google Chrome; fall back to manual Chromium if unavailable."""
+    from ui.colors import GREEN, YELLOW
+    from ui.display import print_lock
     _chrome_kw = {k: v for k, v in _launch_kwargs.items() if k != "executable_path"}
     try:
-        return p.chromium.launch(channel="chrome", **_chrome_kw)
+        _b = p.chromium.launch(channel="chrome", **_chrome_kw)
+        with print_lock:
+            print(f"{GREEN}[Browser] Real Google Chrome launched{WHITE}")
+        return _b
     except Exception:
         _fb_kw = dict(_launch_kwargs)
         if os.path.exists(_exe):
             _fb_kw["executable_path"] = _exe
-        return p.chromium.launch(**_fb_kw)
+        _b = p.chromium.launch(**_fb_kw)
+        with print_lock:
+            print(f"{YELLOW}[Browser] Chromium launched (fallback){WHITE}")
+        return _b
 
 
 def run_browser_mode(numbers, password_config, counter=None):
