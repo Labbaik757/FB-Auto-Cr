@@ -266,7 +266,7 @@ def _click_resend_twice(page):
     for sel in expander_selectors:
         try:
             btn = page.locator(sel).first
-            if btn.count() > 0 and btn.is_visible(timeout=3000):
+            if btn.count() > 0 and btn.is_visible(timeout=500):
                 btn.click()
                 with print_lock:
                     print(f"{CYAN}[Browser] Expander clicked to reveal resend{WHITE}")
@@ -292,7 +292,7 @@ def _click_resend_twice(page):
         for sel in resend_selectors:
             try:
                 btn = page.locator(sel).first
-                if btn.count() > 0 and btn.is_visible(timeout=3000):
+                if btn.count() > 0 and btn.is_visible(timeout=500):
                     btn.click()
                     clicked += 1
                     with print_lock:
