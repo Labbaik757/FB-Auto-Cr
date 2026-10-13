@@ -297,7 +297,7 @@ def _click_resend_twice(page):
                     clicked += 1
                     with print_lock:
                         print(f"{CYAN}[Browser] Resend clicked ({clicked}/3){WHITE}")
-                    time.sleep(1.5)  # Human pause between resends
+                    time.sleep(random.uniform(1.0, 2.5))  # Human pause between resends
                     break
             except Exception:
                 continue
@@ -520,7 +520,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 except Exception:
                     pass
                 time.sleep(0.5)
-            time.sleep(1.0)  # Small settle after OTP page detected
+            time.sleep(random.uniform(0.8, 2.0))  # Human settle after OTP page
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Browser] Submit FAILED: {e}{WHITE}")
@@ -677,7 +677,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         with print_lock:
                             print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
                         _human_click(page, continue_btn)
-                        time.sleep(5.0)  # Human waits for profile to load
+                        time.sleep(random.uniform(3.5, 6.0))  # Human waits for profile to load
                         navigated = True
                     except Exception as e:
                         with print_lock:
@@ -697,7 +697,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                             _human_pause(2.0, 3.0)
                             with print_lock:
                                 print(f"{GREEN}[Browser] Profile opened: {page.url}{WHITE}")
-                            time.sleep(4.0)  # 4s after profile per user
+                            time.sleep(random.uniform(3.5, 5.0))  # ~4s after profile per user
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
@@ -786,7 +786,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                         browser.close()
                     except Exception:
                         pass
-                    time.sleep(2.0)
+                    time.sleep(random.uniform(1.5, 3.0))
                     browser = p.chromium.launch(**_launch_kwargs)
                     _accounts_since_restart = 0
                 number, sms_url = _parse_number_entry(entry)
