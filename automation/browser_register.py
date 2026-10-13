@@ -52,6 +52,31 @@ def _human_pause(min_s=1.0, max_s=3.0):
     time.sleep(1.0)
 
 
+def _human_mouse_move(page, x, y, steps=15):
+    """Move mouse in a human-like curve with slight randomness."""
+    import random as _r
+    for i in range(1, steps + 1):
+        t = i / steps
+        nx = x * t + _r.uniform(-8, 8) * (1 - t)
+        ny = y * t + _r.uniform(-8, 8) * (1 - t) + 80 * t * (1 - t)
+        try:
+            page.mouse.move(nx, ny, steps=1)
+        except Exception:
+            break
+        time.sleep(_r.uniform(0.01, 0.03))
+
+def _human_click(page, locator):
+    """Hover with human mouse movement, then click."""
+    try:
+        box = locator.bounding_box(timeout=5000)
+        if box:
+            _human_mouse_move(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            time.sleep(random.uniform(0.1, 0.3))
+    except Exception:
+        pass
+    locator.click()
+
+
 def _human_type(page, selector, text, min_delay=80, max_delay=250):
     """
     Type text character by character with random delays,
@@ -60,8 +85,17 @@ def _human_type(page, selector, text, min_delay=80, max_delay=250):
     element = selector if hasattr(selector, "click") else page.locator(selector)
     element.click()
     _human_pause(0.3, 0.8)
-    for char in text:
+    # 15% chance: make a typo then correct it (human-like)
+    _typo_done = False
+    for idx, char in enumerate(text):
         element.press_sequentially(char, delay=random.randint(min_delay, max_delay))
+        if not _typo_done and len(text) > 4 and idx == len(text) // 2 and random.random() < 0.15:
+            _typo_done = True
+            _wrong = random.choice("asdfghjkl")
+            element.press_sequentially(_wrong, delay=random.randint(80, 150))
+            time.sleep(random.uniform(0.3, 0.7))
+            element.press("Backspace")
+            time.sleep(random.uniform(0.2, 0.5))
     _human_pause(0.5, 1.5)
 
 
@@ -347,6 +381,14 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         # Navigate to Facebook registration
         page.goto("https://www.facebook.com/r.php", wait_until="domcontentloaded")
         _human_pause(2.0, 4.0)
+        # Human-like: scroll down and up as if reading the form
+        try:
+            page.evaluate("() => window.scrollTo(0, 300)")
+            time.sleep(random.uniform(0.5, 1.0))
+            page.evaluate("() => window.scrollTo(0, 0)")
+            time.sleep(random.uniform(0.3, 0.7))
+        except Exception:
+            pass
 
         # Debug: check what page actually loaded
         with print_lock:
@@ -602,7 +644,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         continue_btn.wait_for(state="visible", timeout=15000)
                         with print_lock:
                             print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
-                        continue_btn.click()
+                        _human_click(page, continue_btn)
                         time.sleep(5.0)  # Human waits for profile to load
                         navigated = True
                     except Exception as e:
@@ -713,9 +755,12 @@ def run_browser_mode(numbers, password_config, counter=None):
                         print(f"{CYAN}SMS URL: {sms_url[:50]}...{WHITE}")
 
                 # Fresh context per account (incognito-like)
+                _vp = random.choice([(1366, 768), (1920, 1080), (1536, 864), (1440, 900), (1280, 720)])
+                _cv = random.choice(["120.0.0.0", "121.0.0.0", "122.0.0.0", "123.0.0.0", "124.0.0.0"])
+                _ua = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{_cv} Safari/537.36"
                 context = browser.new_context(
-                    viewport={"width": 1280, "height": 720},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={"width": _vp[0], "height": _vp[1]},
+                    user_agent=_ua,
                     locale="en-US",
                 )
                 # Fingerprint spoofing: canvas noise + WebGL GPU spoof (per-account random)
