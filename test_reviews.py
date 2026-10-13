@@ -100,127 +100,79 @@ def fb_login(context, page, cookie_str):
 
 
 def submit_review(page, page_url, review_text):
-    """Navigate to page, open Reviews, select Yes, paste review, post.
+    """Submit a page review. VERIFIED selectors (2026-10-13 live test).
+    Flow: page?sk=reviews -> Yes button -> wait composer -> textbox -> Post.
     Returns True only if submission is verified."""
-    page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
-    _human_pause(2.0, 3.0)
-    # Open Recommendations/Reviews dialog
-    _opened = False
-    for _sel in ['See Recommendations', 'Reviews', 'Recommendations']:
-        try:
-            _btn = page.get_by_role("button", name=_sel).first
-            if _btn.count() > 0:
-                _human_click(page, _btn)
-                _opened = True
-                with print_lock:
-                    print(f"{CYAN}[Reviews] Opened via '{_sel}'{WHITE}")
-                break
-        except Exception:
-            continue
-    if not _opened:
-        # Try aria-label variant
-        try:
-            _btn = page.locator('[aria-label="See Recommendations"]').first
-            _human_click(page, _btn)
-            _opened = True
-        except Exception:
-            pass
-    if not _opened:
-        with print_lock:
-            print(f"{RED}[Reviews] Could not open recommendations dialog{WHITE}")
-        return False
+    # Extract page ID and go directly to reviews tab
+    import re as _re
+    _m = _re.search(r'id=(\d+)', page_url)
+    if _m:
+        _pid = _m.group(1)
+        _reviews_url = f"https://www.facebook.com/profile.php?id={_pid}&sk=reviews"
+    else:
+        _reviews_url = page_url.rstrip("/") + "/reviews"
+    page.goto(_reviews_url, wait_until="domcontentloaded", timeout=30000)
     _human_pause(2.0, 3.0)
 
-    # Discover dialog UI: dump all radios/buttons in dialog
-    with print_lock:
-        print(f"{CYAN}[Reviews] Scanning dialog for Yes/No options...{WHITE}")
-    _yes_clicked = False
-    for _sel in ["Yes", "yes", "YES"]:
-        for _role in ["radio", "button"]:
-            try:
-                _el = page.get_by_role(_role, name=_sel, exact=True).first
-                if _el.count() > 0 and _el.is_visible(timeout=2000):
-                    _human_click(page, _el)
-                    _yes_clicked = True
-                    with print_lock:
-                        print(f"{GREEN}[Reviews] Clicked '{_sel}' ({_role}){WHITE}")
-                    break
-            except Exception:
-                continue
-        if _yes_clicked:
-            break
-    if not _yes_clicked:
-        # Fallback: any element with exact text "Yes"
-        try:
-            _el = page.get_by_text("Yes", exact=True).first
-            if _el.count() > 0 and _el.is_visible(timeout=2000):
-                _human_click(page, _el)
-                _yes_clicked = True
-                with print_lock:
-                    print(f"{GREEN}[Reviews] Clicked 'Yes' (text fallback){WHITE}")
-        except Exception:
-            pass
-    if not _yes_clicked:
-        # Last resort: dump what's actually in the dialog for debugging
-        try:
-            _dialog_text = page.locator('[role="dialog"]').first.inner_text()[:500]
-            with print_lock:
-                print(f"{YELLOW}[Reviews] Dialog contents: {_dialog_text}{WHITE}")
-        except Exception:
-            pass
-        with print_lock:
-            print(f"{RED}[Reviews] Yes option NOT FOUND - cannot proceed{WHITE}")
-        return False
-    _human_pause(1.0, 2.0)
-
-    # Write review text
+    # Click "Yes" (normal button, NOT radio)
     try:
-        textbox = page.get_by_role("textbox").first
-        _human_type(page, textbox, review_text)
+        _yes = page.get_by_role("button", name="Yes", exact=True).first
+        _human_click(page, _yes)
+        with print_lock:
+            print(f"{GREEN}[Reviews] Clicked Yes{WHITE}")
+    except Exception as e:
+        with print_lock:
+            print(f"{RED}[Reviews] Yes button not found: {e}{WHITE}")
+        return False
+
+    # Wait for composer dialog (10-15 sec load)
+    try:
+        _dialog = page.get_by_role("dialog").first
+        _dialog.wait_for(state="visible", timeout=20000)
+        with print_lock:
+            print(f"{CYAN}[Reviews] Dialog opened{WHITE}")
+    except Exception as e:
+        with print_lock:
+            print(f"{RED}[Reviews] Dialog did not open: {e}{WHITE}")
+        return False
+
+    # Textbox: DIV contenteditable, dynamic aria-label - match by role only
+    try:
+        _textbox = _dialog.get_by_role("textbox").first
+        _textbox.wait_for(state="visible", timeout=20000)
+        _human_type(page, _textbox, review_text)
+        with print_lock:
+            print(f"{CYAN}[Reviews] Text typed{WHITE}")
     except Exception as e:
         with print_lock:
             print(f"{RED}[Reviews] Textbox failed: {e}{WHITE}")
         return False
     _human_pause(1.0, 2.0)
 
-    # Submit
-    submitted = False
-    for btn_name in ["Post", "Submit", "Share"]:
-        try:
-            _human_click(page, page.get_by_role("button", name=btn_name).first)
-            submitted = True
-            break
-        except Exception:
-            continue
-    if not submitted:
+    # Click Post (exact name "Post")
+    try:
+        _post = _dialog.get_by_role("button", name="Post", exact=True).first
+        _human_click(page, _post)
         with print_lock:
-            print(f"{RED}[Reviews] Submit button not found{WHITE}")
+            print(f"{CYAN}[Reviews] Clicked Post{WHITE}")
+    except Exception as e:
+        with print_lock:
+            print(f"{RED}[Reviews] Post button not found: {e}{WHITE}")
         return False
 
     time.sleep(random.uniform(3.0, 5.0))
 
-    # Verify: check if review appears or success message
+    # Verify: review text appears on page
     try:
-        page_content = page.content().lower()
-        if review_text[:20].lower() in page_content:
+        if review_text[:20].lower() in page.content().lower():
             with print_lock:
-                print(f"{GREEN}[Reviews] Verified: review text found on page{WHITE}")
-            return True
-    except Exception:
-        pass
-    # If textbox is gone/empty, likely submitted
-    try:
-        textbox = page.get_by_role("textbox").first
-        if textbox.input_value() == "":
-            with print_lock:
-                print(f"{GREEN}[Reviews] Verified: textbox cleared after post{WHITE}")
+                print(f"{GREEN}[Reviews] VERIFIED: review found on page{WHITE}")
             return True
     except Exception:
         pass
     with print_lock:
-        print(f"{YELLOW}[Reviews] Could not verify submission{WHITE}")
+        print(f"{YELLOW}[Reviews] Could not verify - check manually{WHITE}")
     return False
-
 
 def main():
     print(f"{CYAN}=== Fb Reviews Automation TEST ==={WHITE}")
