@@ -115,7 +115,6 @@ def main():
 
     accounts = read_lines(os.path.join(BASE, "output", "browser_accounts.txt"))
     reviews = read_lines(os.path.join(BASE, "reviews.txt"))
-    target = read_lines(os.path.join(BASE, "target_page.txt"))
 
     if not accounts:
         print(f"{RED}No accounts in output/browser_accounts.txt{WHITE}")
@@ -123,11 +122,12 @@ def main():
     if not reviews:
         print(f"{RED}No reviews in reviews.txt - paste client list there{WHITE}")
         return
-    if not target:
-        print(f"{RED}No page URL in target_page.txt{WHITE}")
-        return
 
-    page_url = target[0]
+    # Live input: paste page link in terminal (like custom password)
+    page_url = input(f"{CYAN}Paste Facebook Page Link and press Enter: {WHITE}").strip()
+    if not page_url:
+        print(f"{RED}No link given{WHITE}")
+        return
     print(f"{CYAN}Page: {page_url}{WHITE}")
     print(f"{CYAN}Accounts: {len(accounts)}, Reviews: {len(reviews)}{WHITE}")
 
