@@ -4,12 +4,24 @@ from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, EKL, LINE
 from core.settings_manager import load_settings
 
 
-# Generate a strong random password matching security criteria
+# Generate a strong random password with varied human-like patterns
 def generate_random_password():
-    return ''.join(random.choices(
-        string.ascii_letters + string.digits + '!@#$%^&*',
-        k=random.randint(8, 14)
-    ))
+    _words = ["Sunset", "Tiger", "Moon", "Star", "Dragon", "Eagle", "River",
+              "Storm", "Fire", "Ocean", "Mountain", "Wolf", "Lion", "Sky"]
+    _sym = "!@#$%^&*"
+    _pattern = random.choice([1, 2, 3])
+    if _pattern == 1:
+        # Word + symbol + numbers (human-like)
+        return random.choice(_words) + random.choice(_sym) + str(random.randint(1000, 99999))
+    elif _pattern == 2:
+        # Numbers + word + symbol
+        return str(random.randint(100, 9999)) + random.choice(_words) + random.choice(_sym)
+    else:
+        # Full random mix (original)
+        return ''.join(random.choices(
+            string.ascii_letters + string.digits + _sym,
+            k=random.randint(8, 14)
+        ))
 
 
 # Prompt user for password preference or use settings configuration
