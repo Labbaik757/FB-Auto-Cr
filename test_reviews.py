@@ -114,6 +114,20 @@ def submit_review(page, page_url, review_text):
     page.goto(_reviews_url, wait_until="domcontentloaded", timeout=30000)
     _human_pause(2.0, 3.0)
 
+    # Skip if this account already reviewed (no Yes button = already done)
+    try:
+        page.get_by_role("button", name="Yes", exact=True).first.wait_for(
+            state="visible", timeout=8000)
+    except Exception:
+        _body = page.content().lower()
+        if "recommends" in _body:
+            with print_lock:
+                print(f"{YELLOW}[Reviews] Already reviewed - skipping{WHITE}")
+            return True  # not a failure
+        with print_lock:
+            print(f"{RED}[Reviews] Yes button not found and no existing review{WHITE}")
+        return False
+
     # Click "Yes" (normal button, NOT radio)
     try:
         _yes = page.get_by_role("button", name="Yes", exact=True).first
