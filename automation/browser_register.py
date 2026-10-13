@@ -175,8 +175,8 @@ def _parse_number_entry(entry):
     return entry, None
 
 
-def _apply_fingerprint_spoof(context, chrome_ver="120.0.0.0"):
-    """Inject canvas/WebGL/navigator/client-hints spoofing. Each account gets a different fingerprint."""
+def _apply_fingerprint_spoof(context, chrome_ver="120.0.0.0", viewport=(1280, 720)):
+    """Inject canvas/WebGL/navigator/client-hints/screen/font spoofing. Each account gets a different fingerprint."""
     import random as _rand
     # Random GPU from common list (per-account)
     _gpus = [
@@ -260,6 +260,19 @@ def _apply_fingerprint_spoof(context, chrome_ver="120.0.0.0"):
         try {{
             Object.defineProperty(navigator, 'webdriver', {{ get: function() {{ return false; }} }});
             Object.defineProperty(navigator, 'plugins', {{ get: function() {{ return [1, 2, 3, 4]; }} }});
+        }} catch (e) {{}}
+        // --- Screen spoof (match viewport) ---
+        try {{
+            Object.defineProperty(screen, 'width', {{ get: function() {{ return {viewport[0]}; }} }});
+            Object.defineProperty(screen, 'height', {{ get: function() {{ return {viewport[1]}; }} }});
+            Object.defineProperty(screen, 'availWidth', {{ get: function() {{ return {viewport[0]}; }} }});
+            Object.defineProperty(screen, 'availHeight', {{ get: function() {{ return {viewport[1]} - 40; }} }});
+            Object.defineProperty(screen, 'colorDepth', {{ get: function() {{ return 24; }} }});
+        }} catch (e) {{}}
+        // --- Font fingerprint limit ---
+        try {{
+            var _origCheck = document.fonts.check;
+            document.fonts.check = function() {{ return true; }};
         }} catch (e) {{}}
         // --- AudioContext noise ---
         try {{
@@ -840,8 +853,8 @@ def run_browser_mode(numbers, password_config, counter=None):
                     user_agent=_ua,
                     locale="en-US",
                 )
-                # Fingerprint spoofing: canvas noise + WebGL GPU spoof (per-account random)
-                _apply_fingerprint_spoof(context, _cv)
+                # Fingerprint spoofing: canvas/WebGL/screen/fonts (per-account random)
+                _apply_fingerprint_spoof(context, _cv, _vp)
                 page = context.new_page()
 
                 try:
