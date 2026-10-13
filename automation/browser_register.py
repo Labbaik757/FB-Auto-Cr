@@ -226,6 +226,22 @@ def _apply_fingerprint_spoof(context):
             if (param === 37446) return _renderer;
             return _origGetParam2.apply(this, arguments);
         }};
+        // --- Navigator spoof ---
+        try {{
+            Object.defineProperty(navigator, 'webdriver', {{ get: function() {{ return false; }} }});
+            Object.defineProperty(navigator, 'plugins', {{ get: function() {{ return [1, 2, 3, 4]; }} }});
+        }} catch (e) {{}}
+        // --- AudioContext noise ---
+        try {{
+            var _origGCD = AudioBuffer.prototype.getChannelData;
+            AudioBuffer.prototype.getChannelData = function(ch) {{
+                var data = _origGCD.apply(this, arguments);
+                for (var i = 0; i < data.length; i += 97) {{
+                    data[i] += (Math.random() - 0.5) * 0.0005;
+                }}
+                return data;
+            }};
+        }} catch (e) {{}}
     }})();
     """
     try:
@@ -412,12 +428,14 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             return {"status": "failed", "number": phone_number, "reason": "form not loaded"}
 
         # Fill by position (was working): 3 text inputs + 1 password
+        # Random order (human doesn't always go top-to-bottom)
         text_inputs = page.locator('input[type="text"]')
         pwd_inputs = page.locator('input[type="password"]')
-        _human_type(page, text_inputs.nth(0), first_name)
-        _human_type(page, text_inputs.nth(1), last_name)
-        _human_type(page, text_inputs.nth(2), phone_number)
-        _human_type(page, pwd_inputs.nth(0), password)
+        _fields = [(text_inputs.nth(0), first_name), (text_inputs.nth(1), last_name),
+                   (text_inputs.nth(2), phone_number), (pwd_inputs.nth(0), password)]
+        random.shuffle(_fields)
+        for _loc, _val in _fields:
+            _human_type(page, _loc, _val)
 
         # Select birthday
         dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
@@ -742,9 +760,21 @@ def run_browser_mode(numbers, password_config, counter=None):
         if os.path.exists(_exe):
             _launch_kwargs["executable_path"] = _exe
         browser = p.chromium.launch(**_launch_kwargs)
+        _accounts_since_restart = 0
 
         try:
             for idx, entry in enumerate(numbers, 1):
+                # Restart browser every 4 accounts for fresh fingerprint
+                if _accounts_since_restart >= 4:
+                    with print_lock:
+                        print(f"{YELLOW}[Browser] Restarting browser (every 4 accounts){WHITE}")
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    time.sleep(2.0)
+                    browser = p.chromium.launch(**_launch_kwargs)
+                    _accounts_since_restart = 0
                 number, sms_url = _parse_number_entry(entry)
                 if not number:
                     continue  # Skip empty/comment lines
@@ -817,6 +847,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                         context.close()
                     except Exception:
                         pass
+                    _accounts_since_restart += 1
 
                 # Pause between accounts (human-like)
                 if idx < len(numbers):
