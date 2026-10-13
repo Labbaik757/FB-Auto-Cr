@@ -63,7 +63,12 @@ try:
 
         print(f"{CYAN}Creating account...{WHITE}")
         result = browser_create_account(page, number, password, counter=None, sms_url=sms_url)
-        print(f"\n{CYAN}Result: {result}{WHITE}")
+        print(f"\n{CYAN}{'='*50}{WHITE}")
+        if result.get("status") == "success":
+            print(f"{GREEN}[Test] SUCCESS: UID {result.get('uid')}{WHITE}")
+        else:
+            print(f"{RED}[Test] FAILED: {result.get('number')} - {result.get('reason')}{WHITE}")
+        print(f"{CYAN}{'='*50}{WHITE}")
 
         context.close()
         browser.close()
