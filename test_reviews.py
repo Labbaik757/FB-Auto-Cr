@@ -164,9 +164,17 @@ def main():
     # Gemini expands if needed > available
     if need > len(reviews):
         print(f"{CYAN}Need {need}, have {len(reviews)} - asking Gemini for variations...{WHITE}")
+        _key_file = os.path.join(BASE, "gemini_api_key.txt")
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key and os.path.exists(_key_file):
+            with open(_key_file) as _kf:
+                api_key = _kf.read().strip()
         if not api_key:
-            api_key = input(f"{CYAN}Enter Gemini API Key: {WHITE}").strip()
+            api_key = input(f"{CYAN}Enter Gemini API Key (one time only): {WHITE}").strip()
+            if api_key:
+                with open(_key_file, "w") as _kf:
+                    _kf.write(api_key)
+                print(f"{GREEN}API key saved - won't ask again{WHITE}")
         if api_key:
             reviews = gemini_variations(reviews, need, api_key)
             print(f"{GREEN}Gemini generated {len(reviews)} unique reviews{WHITE}")
