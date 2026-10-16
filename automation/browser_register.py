@@ -595,8 +595,6 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                                 _final_url = page.url.lower()
                             with print_lock:
                                 print(f"{CYAN}[Browser] Profile URL: {page.url}{WHITE}")
-                            with print_lock:
-                                print(f"{CYAN}[Browser] Profile URL: {page.url}{WHITE}")
                             if "confirmemail" in _final_url or "checkpoint" in _final_url:
                                 with print_lock:
                                     print(f"{YELLOW}[Browser] Profile blocked - still on verification page{WHITE}")
