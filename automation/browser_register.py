@@ -576,20 +576,43 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     c_user = next((c["value"] for c in cookies if c["name"] == "c_user"), None)
                     if c_user:
                         # Open profile to verify account works
+                        _profile_ok = False
                         try:
                             with print_lock:
                                 print(f"{CYAN}[Browser] Opening profile...{WHITE}")
                             page.goto(f"https://www.facebook.com/{c_user}", wait_until="domcontentloaded", timeout=30000)
                             _human_pause(2.0, 3.0)
+                            _final_url = page.url.lower()
                             with print_lock:
-                                print(f"{GREEN}[Browser] Profile opened: {page.url}{WHITE}")
+                                print(f"{CYAN}[Browser] Profile URL: {page.url}{WHITE}")
+                            if "confirmemail" in _final_url or "checkpoint" in _final_url:
+                                with print_lock:
+                                    print(f"{YELLOW}[Browser] Profile blocked - still on verification page{WHITE}")
+                            else:
+                                _profile_ok = True
+                                with print_lock:
+                                    print(f"{GREEN}[Browser] Profile opened OK{WHITE}")
                             time.sleep(random.choice([3, 4, 5]))  # Profile open: 3/4/5 sec random
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
                         cookie_str = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-                        if counter:
-                            counter.update("success")
+                        if _profile_ok:
+                            if counter:
+                                counter.update("success")
+                        else:
+                            if counter:
+                                counter.update("failed")
+                            with print_lock:
+                                print(f"{YELLOW}[Browser] Account {c_user} needs manual verification{WHITE}")
+                            return {
+                                "status": "failed",
+                                "uid": c_user,
+                                "password": password,
+                                "cookies": cookie_str,
+                                "result_line": f"{c_user}|{password}|{cookie_str}",
+                                "reason": "profile_verification_pending",
+                            }
                         return {
                             "status": "success",
                             "uid": c_user,
