@@ -571,18 +571,30 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         navigated = False
                     _human_pause(2.0, 3.0)
 
-                    # Check again for login
+                    # Check again for login - wait for Facebook's automatic navigation
+                    _human_pause(3.0, 5.0)
+                    try:
+                        _auto_url = page.url.lower()
+                    except Exception:
+                        _auto_url = ""
+                    with print_lock:
+                        print(f"{CYAN}[Browser] After Continue URL: {page.url}{WHITE}")
                     cookies = page.context.cookies()
                     c_user = next((c["value"] for c in cookies if c["name"] == "c_user"), None)
                     if c_user:
-                        # Open profile to verify account works
+                        # Let Facebook navigate automatically; only goto if stuck
                         _profile_ok = False
                         try:
-                            with print_lock:
-                                print(f"{CYAN}[Browser] Opening profile...{WHITE}")
-                            page.goto(f"https://www.facebook.com/{c_user}", wait_until="domcontentloaded", timeout=30000)
-                            _human_pause(2.0, 3.0)
                             _final_url = page.url.lower()
+                            if "confirmemail" in _final_url or "checkpoint" in _final_url:
+                                # Still on verification - try one manual profile open
+                                with print_lock:
+                                    print(f"{CYAN}[Browser] Trying profile open...{WHITE}")
+                                page.goto(f"https://www.facebook.com/{c_user}", wait_until="domcontentloaded", timeout=30000)
+                                _human_pause(2.0, 3.0)
+                                _final_url = page.url.lower()
+                            with print_lock:
+                                print(f"{CYAN}[Browser] Profile URL: {page.url}{WHITE}")
                             with print_lock:
                                 print(f"{CYAN}[Browser] Profile URL: {page.url}{WHITE}")
                             if "confirmemail" in _final_url or "checkpoint" in _final_url:
