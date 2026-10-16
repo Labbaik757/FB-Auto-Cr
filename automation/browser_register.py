@@ -730,7 +730,10 @@ def run_browser_mode(numbers, password_config, counter=None):
 
                 # Pause between accounts
                 if idx < len(numbers):
-                    time.sleep(3)
+                    pause = random.uniform(3, 5)
+                    with print_lock:
+                        print(f"{YELLOW}Waiting {pause:.0f}s before next account...{WHITE}")
+                    time.sleep(pause)
 
         finally:
             browser.close()
