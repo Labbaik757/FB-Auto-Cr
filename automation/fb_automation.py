@@ -17,11 +17,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from playwright.sync_api import sync_playwright
 from automation.browser_register import (
-    _apply_fingerprint_spoof,
     _human_type,
     _human_pause,
     _human_click,
-    _launch_browser,
 )
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
 from ui.display import print_lock
@@ -332,7 +330,10 @@ def run_reviews_mode():
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
         )
-        browser = _launch_browser(p, _launch_kwargs, _exe)
+        _lk = dict(_launch_kwargs)
+        if os.path.exists(_exe):
+            _lk["executable_path"] = _exe
+        browser = p.chromium.launch(**_lk)
 
         done = 0
         for acc_line, review in test_pairs:
@@ -344,15 +345,7 @@ def run_reviews_mode():
                 continue
             print(f"\n{CYAN}--- Account: {uid} ---{WHITE}")
 
-            _vp = random.choice([(1366, 768), (1920, 1080), (1536, 864)])
-            _cv = random.choice(["120.0.0.0", "121.0.0.0", "122.0.0.0", "123.0.0.0"])
-            _ua = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{_cv} Safari/537.36"
-            context = browser.new_context(
-                viewport={"width": _vp[0], "height": _vp[1]},
-                user_agent=_ua,
-                locale="en-US",
-            )
-            _apply_fingerprint_spoof(context, _cv, _vp)
+            context = browser.new_context()
             page = context.new_page()
 
             try:

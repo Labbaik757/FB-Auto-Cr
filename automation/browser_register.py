@@ -52,28 +52,8 @@ def _human_pause(min_s=1.0, max_s=3.0):
     time.sleep(1.0)
 
 
-def _human_mouse_move(page, x, y, steps=15):
-    """Move mouse in a human-like curve with slight randomness."""
-    import random as _r
-    for i in range(1, steps + 1):
-        t = i / steps
-        nx = x * t + _r.uniform(-8, 8) * (1 - t)
-        ny = y * t + _r.uniform(-8, 8) * (1 - t) + 80 * t * (1 - t)
-        try:
-            page.mouse.move(nx, ny, steps=1)
-        except Exception:
-            break
-        time.sleep(_r.uniform(0.01, 0.03))
-
 def _human_click(page, locator):
-    """Hover with human mouse movement, then click."""
-    try:
-        box = locator.bounding_box(timeout=5000)
-        if box:
-            _human_mouse_move(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-            time.sleep(random.uniform(0.1, 0.3))
-    except Exception:
-        pass
+    """Simple click."""
     locator.click()
 
 
@@ -85,17 +65,8 @@ def _human_type(page, selector, text, min_delay=80, max_delay=250):
     element = selector if hasattr(selector, "click") else page.locator(selector)
     element.click()
     _human_pause(0.3, 0.8)
-    # 15% chance: make a typo then correct it (human-like)
-    _typo_done = False
-    for idx, char in enumerate(text):
+    for char in text:
         element.press_sequentially(char, delay=random.randint(min_delay, max_delay))
-        if not _typo_done and len(text) > 4 and idx == len(text) // 2 and random.random() < 0.15:
-            _typo_done = True
-            _wrong = random.choice("asdfghjkl")
-            element.press_sequentially(_wrong, delay=random.randint(80, 150))
-            time.sleep(random.uniform(0.3, 0.7))
-            element.press("Backspace")
-            time.sleep(random.uniform(0.2, 0.5))
     _human_pause(0.5, 1.5)
 
 
@@ -173,124 +144,6 @@ def _parse_number_entry(entry):
             parts = entry.split(sep, 1)
             return parts[0].strip(), parts[1].strip()
     return entry, None
-
-
-def _apply_fingerprint_spoof(context, chrome_ver="120.0.0.0", viewport=(1280, 720)):
-    """Inject canvas/WebGL/navigator/client-hints/screen/font spoofing. Each account gets a different fingerprint."""
-    import random as _rand
-    # Random GPU from common list (per-account)
-    _gpus = [
-        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0, D3D11)"),
-        ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
-        ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
-        ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
-        ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 5700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)"),
-    ]
-    _vendor, _renderer = _rand.choice(_gpus)
-    _noise = _rand.randint(1, 10)
-
-    _js = f"""
-    (function() {{
-        const _noiseSeed = {_noise};
-        // --- Canvas spoof: subtle noise on toDataURL ---
-        const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
-        HTMLCanvasElement.prototype.toDataURL = function(...args) {{
-            try {{
-                const ctx = this.getContext('2d');
-                if (ctx) {{
-                    const w = this.width, h = this.height;
-                    if (w > 0 && h > 0) {{
-                        const img = ctx.getImageData(0, 0, w, h);
-                        const d = img.data;
-                        for (let i = 0; i < d.length; i += 4) {{
-                            d[i] = (d[i] + _noiseSeed) % 256;
-                        }}
-                        ctx.putImageData(img, 0, 0);
-                    }}
-                }}
-            }} catch (e) {{}}
-            return _origToDataURL.apply(this, args);
-        }};
-        // --- WebGL spoof: fake GPU vendor/renderer ---
-        const _vendor = "{_vendor}";
-        const _renderer = "{_renderer}";
-        const _origGetParam = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function(param) {{
-            if (param === 37445) return _vendor;
-            if (param === 37446) return _renderer;
-            return _origGetParam.apply(this, arguments);
-        }};
-        const _origGetParam2 = WebGL2RenderingContext.prototype.getParameter;
-        WebGL2RenderingContext.prototype.getParameter = function(param) {{
-            if (param === 37445) return _vendor;
-            if (param === 37446) return _renderer;
-            return _origGetParam2.apply(this, arguments);
-        }};
-        // --- Client hints spoof (match spoofed UA) ---
-        try {{
-            var _cvm = "{chrome_ver}".split(".")[0];
-            var _brands = [
-                {{ brand: "Chromium", version: _cvm }},
-                {{ brand: "Google Chrome", version: _cvm }},
-                {{ brand: "Not-A.Brand", version: "99" }}
-            ];
-            Object.defineProperty(navigator, 'userAgentData', {{
-                get: function() {{
-                    return {{
-                        brands: _brands,
-                        mobile: false,
-                        platform: "Windows",
-                        getHighEntropyValues: function(hints) {{
-                            return Promise.resolve({{
-                                brands: _brands,
-                                mobile: false,
-                                platform: "Windows",
-                                platformVersion: "15.0.0",
-                                architecture: "x86",
-                                bitness: "64",
-                                model: "",
-                                uaFullVersion: "{chrome_ver}"
-                            }});
-                        }}
-                    }};
-                }}
-            }});
-        }} catch (e) {{}}
-        // --- Navigator spoof ---
-        try {{
-            Object.defineProperty(navigator, 'webdriver', {{ get: function() {{ return false; }} }});
-            Object.defineProperty(navigator, 'plugins', {{ get: function() {{ return [1, 2, 3, 4]; }} }});
-        }} catch (e) {{}}
-        // --- Screen spoof (match viewport) ---
-        try {{
-            Object.defineProperty(screen, 'width', {{ get: function() {{ return {viewport[0]}; }} }});
-            Object.defineProperty(screen, 'height', {{ get: function() {{ return {viewport[1]}; }} }});
-            Object.defineProperty(screen, 'availWidth', {{ get: function() {{ return {viewport[0]}; }} }});
-            Object.defineProperty(screen, 'availHeight', {{ get: function() {{ return {viewport[1]} - 40; }} }});
-            Object.defineProperty(screen, 'colorDepth', {{ get: function() {{ return 24; }} }});
-        }} catch (e) {{}}
-        // --- Font fingerprint limit ---
-        try {{
-            var _origCheck = document.fonts.check;
-            document.fonts.check = function() {{ return true; }};
-        }} catch (e) {{}}
-        // --- AudioContext noise ---
-        try {{
-            var _origGCD = AudioBuffer.prototype.getChannelData;
-            AudioBuffer.prototype.getChannelData = function(ch) {{
-                var data = _origGCD.apply(this, arguments);
-                for (var i = 0; i < data.length; i += 97) {{
-                    data[i] += (Math.random() - 0.5) * 0.0005;
-                }}
-                return data;
-            }};
-        }} catch (e) {{}}
-    }})();
-    """
-    try:
-        context.add_init_script(_js)
-    except Exception:
-        pass
 
 
 def _click_resend_twice(page):
@@ -440,14 +293,6 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         # Navigate to Facebook registration
         page.goto("https://www.facebook.com/r.php", wait_until="domcontentloaded")
         _human_pause(2.0, 4.0)
-        # Human-like: scroll down and up as if reading the form
-        try:
-            page.evaluate("() => window.scrollTo(0, 300)")
-            time.sleep(random.uniform(0.5, 1.0))
-            page.evaluate("() => window.scrollTo(0, 0)")
-            time.sleep(random.uniform(0.3, 0.7))
-        except Exception:
-            pass
 
         # Debug: check what page actually loaded
         with print_lock:
@@ -471,17 +316,12 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             return {"status": "failed", "number": phone_number, "reason": "form not loaded"}
 
         # Fill by position (was working): 3 text inputs + 1 password
-        # Random order (human doesn't always go top-to-bottom)
         text_inputs = page.locator('input[type="text"]')
         pwd_inputs = page.locator('input[type="password"]')
-        _fields = [(text_inputs.nth(0), first_name), (text_inputs.nth(1), last_name),
-                   (text_inputs.nth(2), phone_number), (pwd_inputs.nth(0), password)]
-        random.shuffle(_fields)
-        _think_at = random.randint(1, 3)  # Random thinking pause position
-        for _fi, (_loc, _val) in enumerate(_fields):
-            _human_type(page, _loc, _val)
-            if _fi == _think_at:
-                time.sleep(random.uniform(1.0, 3.0))  # Human thinking pause
+        _human_type(page, text_inputs.nth(0), first_name)
+        _human_type(page, text_inputs.nth(1), last_name)
+        _human_type(page, text_inputs.nth(2), phone_number)
+        _human_type(page, pwd_inputs.nth(0), password)
 
         # Select birthday
         dob_ok = _select_birthday(page, birth_date.day, birth_month, birth_date.year)
@@ -782,26 +622,6 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         return {"status": "error", "reason": str(e)}
 
 
-def _launch_browser(p, _launch_kwargs, _exe):
-    """Launch real Google Chrome; fall back to manual Chromium if unavailable."""
-    from ui.colors import GREEN, YELLOW
-    from ui.display import print_lock
-    _chrome_kw = {k: v for k, v in _launch_kwargs.items() if k != "executable_path"}
-    try:
-        _b = p.chromium.launch(channel="chrome", **_chrome_kw)
-        with print_lock:
-            print(f"{GREEN}[Browser] Real Google Chrome launched{WHITE}")
-        return _b
-    except Exception:
-        _fb_kw = dict(_launch_kwargs)
-        if os.path.exists(_exe):
-            _fb_kw["executable_path"] = _exe
-        _b = p.chromium.launch(**_fb_kw)
-        with print_lock:
-            print(f"{YELLOW}[Browser] Chromium launched (fallback){WHITE}")
-        return _b
-
-
 def run_browser_mode(numbers, password_config, counter=None):
     """
     Run browser automation for a list of numbers (sequential, one by one).
@@ -837,22 +657,13 @@ def run_browser_mode(numbers, password_config, counter=None):
             headless=False,
             args=["--disable-blink-features=AutomationControlled"],
         )
-        browser = _launch_browser(p, _launch_kwargs, _exe)
-        _accounts_since_restart = 0
+        _launch_kw = dict(_launch_kwargs)
+        if os.path.exists(_exe):
+            _launch_kw["executable_path"] = _exe
+        browser = p.chromium.launch(**_launch_kw)
 
         try:
             for idx, entry in enumerate(numbers, 1):
-                # Restart browser every 4 accounts for fresh fingerprint
-                if _accounts_since_restart >= 4:
-                    with print_lock:
-                        print(f"{YELLOW}[Browser] Restarting browser (every 4 accounts){WHITE}")
-                    try:
-                        browser.close()
-                    except Exception:
-                        pass
-                    time.sleep(random.uniform(1.5, 3.0))
-                    browser = _launch_browser(p, _launch_kwargs, _exe)
-                    _accounts_since_restart = 0
                 number, sms_url = _parse_number_entry(entry)
                 if not number:
                     continue  # Skip empty/comment lines
@@ -863,16 +674,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                         print(f"{CYAN}SMS URL: {sms_url[:50]}...{WHITE}")
 
                 # Fresh context per account (incognito-like)
-                _vp = random.choice([(1366, 768), (1920, 1080), (1536, 864), (1440, 900), (1280, 720)])
-                _cv = random.choice(["120.0.0.0", "121.0.0.0", "122.0.0.0", "123.0.0.0", "124.0.0.0"])
-                _ua = f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{_cv} Safari/537.36"
-                context = browser.new_context(
-                    viewport={"width": _vp[0], "height": _vp[1]},
-                    user_agent=_ua,
-                    locale="en-US",
-                )
-                # Fingerprint spoofing: canvas/WebGL/screen/fonts (per-account random)
-                _apply_fingerprint_spoof(context, _cv, _vp)
+                context = browser.new_context()
                 page = context.new_page()
 
                 try:
@@ -925,14 +727,10 @@ def run_browser_mode(numbers, password_config, counter=None):
                         context.close()
                     except Exception:
                         pass
-                    _accounts_since_restart += 1
 
-                # Pause between accounts (human-like)
+                # Pause between accounts
                 if idx < len(numbers):
-                    pause = random.uniform(3, 5)  # Max 7s between accounts per user
-                    with print_lock:
-                        print(f"{YELLOW}Waiting {pause:.0f}s before next account...{WHITE}")
-                    time.sleep(pause)
+                    time.sleep(3)
 
         finally:
             browser.close()
