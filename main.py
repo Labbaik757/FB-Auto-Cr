@@ -19,7 +19,6 @@ from core.password_manager import select_password_config
 from core.number_manager import process_file_input
 from core.path_manager import is_termux_or_mobile, get_base_storage_dir, get_output_dir
 from core.counter import Counter
-from automation.create_task import create_worker
 
 
 # Display current configuration state on screen
@@ -114,6 +113,7 @@ def run_create():
 
     wid_gen = count(1)
 
+    from automation.create_task import create_worker
     try:
         for num in numbers:
             proxy_data = next(proxy_cycle) if proxy_cycle else no_proxy_data
