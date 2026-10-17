@@ -125,6 +125,12 @@ def outlook_create_account(page, password_config, counter=None):
     months = ["January", "February", "March", "April", "May", "June",
               "July", "August", "September", "October", "November", "December"]
     month_name = months[birth_month - 1]
+    # Random country for each account (different every time)
+    countries = ["United States", "United Kingdom", "Canada", "Australia", "Pakistan",
+                 "India", "Germany", "France", "Netherlands", "Spain", "Italy",
+                 "United Arab Emirates", "Saudi Arabia", "Turkey", "Malaysia",
+                 "Singapore", "New Zealand", "Ireland", "Sweden", "Norway"]
+    country_name = random.choice(countries)
 
     # Password: same system as Facebook
     if password_config and password_config.get("type") == "fixed" and password_config.get("value"):
@@ -154,32 +160,80 @@ def outlook_create_account(page, password_config, counter=None):
         _human_type(page, pwd_field, password)
         _human_pause(1.0, 2.0)
         page.get_by_role("button", name="Next").first.click()
-        _human_pause(2.0, 3.0)
+        _human_pause(2.5, 4.0)
+        # Verify we moved past password step
+        try:
+            pwd_still = page.get_by_role("textbox", name="Password").count() > 0
+            if pwd_still:
+                with print_lock:
+                    print(f"{YELLOW}[Outlook] Password Next didn't advance, retrying...{WHITE}")
+                page.get_by_role("button", name="Next").first.click()
+                _human_pause(3.0, 5.0)
+        except Exception:
+            pass
         with print_lock:
             print(f"{GREEN}[Outlook] Password entered{WHITE}")
 
-        # Step 3: Birthdate
-        # Birth month combobox
-        month_combo = page.get_by_role("combobox", name="Birth month").first
-        month_combo.wait_for(state="visible", timeout=15000)
-        month_combo.click()
-        _human_pause(0.5, 1.0)
-        page.get_by_role("option", name=month_name, exact=True).first.click()
-        _human_pause(0.5, 1.0)
-        page.keyboard.press("Escape")
-        # Birth day combobox
-        day_combo = page.get_by_role("combobox", name="Birth day").first
-        day_combo.click()
-        _human_pause(0.5, 1.0)
-        page.get_by_role("option", name=str(birth_day), exact=True).first.click()
-        _human_pause(0.5, 1.0)
-        page.keyboard.press("Escape")
-        # Birth year spinbutton (type directly)
+        # Step 3: Birthdate (+ random country)
+        def _select_combo(combo_name, option_name):
+            """Click combobox, click option, verify selection took effect."""
+            combo = page.get_by_role("combobox", name=combo_name).first
+            combo.wait_for(state="visible", timeout=15000)
+            combo.click()
+            _human_pause(0.8, 1.5)
+            opt = page.get_by_role("option", name=option_name, exact=True).first
+            opt.wait_for(state="visible", timeout=10000)
+            opt.scroll_into_view_if_needed(timeout=5000)
+            _human_pause(0.3, 0.6)
+            opt.click()
+            _human_pause(0.8, 1.2)
+            # Verify: combobox should now show the selected value
+            try:
+                val = combo.input_value(timeout=3000)
+                if option_name.lower() not in val.lower() and val.strip():
+                    with print_lock:
+                        print(f"{YELLOW}[Outlook] Combo '{combo_name}' shows '{val}', retrying...{WHITE}")
+                    combo.click()
+                    _human_pause(0.8, 1.2)
+                    page.get_by_role("option", name=option_name, exact=True).first.click()
+                    _human_pause(0.8, 1.2)
+            except Exception:
+                pass
+            page.keyboard.press("Escape")
+            _human_pause(0.5, 1.0)
+
+        # Country/Region (different for every account)
+        _select_combo("Country/Region", country_name)
+        with print_lock:
+            print(f"{GREEN}[Outlook] Country: {country_name}{WHITE}")
+        # Birth month
+        _select_combo("Birth month", month_name)
+        # Birth day
+        _select_combo("Birth day", str(birth_day))
+        # Birth year spinbutton: clear first, then type
         year_field = page.get_by_role("spinbutton", name="Birth year").first
+        year_field.wait_for(state="visible", timeout=15000)
+        year_field.click()
+        _human_pause(0.3, 0.6)
+        page.keyboard.press("ControlOrMeta+a")
+        page.keyboard.press("Backspace")
+        _human_pause(0.3, 0.6)
         _human_type(page, year_field, str(birth_year))
         _human_pause(1.0, 2.0)
+        # Click Next and VERIFY we actually advanced
         page.get_by_role("button", name="Next").first.click()
-        _human_pause(2.0, 3.0)
+        _human_pause(2.5, 4.0)
+        # If still on birthdate page, the Next didn't work - report it
+        try:
+            still_here = page.get_by_role("combobox", name="Birth month").count() > 0
+            if still_here:
+                with print_lock:
+                    print(f"{RED}[Outlook] STUCK: Still on birthdate page after Next!{WHITE}")
+                    print(f"{YELLOW}[Outlook] Trying Next once more...{WHITE}")
+                page.get_by_role("button", name="Next").first.click()
+                _human_pause(3.0, 5.0)
+        except Exception:
+            pass
         with print_lock:
             print(f"{GREEN}[Outlook] Birthdate: {month_name} {birth_day}, {birth_year}{WHITE}")
 
