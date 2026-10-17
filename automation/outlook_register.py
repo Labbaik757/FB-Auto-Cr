@@ -147,6 +147,28 @@ def _apply_fingerprint_spoof(context):
     except Exception:
         pass
 
+# Virtual device profiles - each account gets a different device fingerprint
+VIRTUAL_DEVICES = [
+    {"name": "Desktop Chrome Win", "viewport": {"width": 1920, "height": 1080},
+     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+     "device_scale_factor": 1, "is_mobile": False, "has_touch": False},
+    {"name": "Desktop Chrome Win 2", "viewport": {"width": 1366, "height": 768},
+     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+     "device_scale_factor": 1, "is_mobile": False, "has_touch": False},
+    {"name": "iPhone 14", "viewport": {"width": 390, "height": 844},
+     "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+     "device_scale_factor": 3, "is_mobile": True, "has_touch": True},
+    {"name": "Pixel 7", "viewport": {"width": 412, "height": 915},
+     "user_agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+     "device_scale_factor": 2.6, "is_mobile": True, "has_touch": True},
+    {"name": "Samsung Galaxy", "viewport": {"width": 360, "height": 800},
+     "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+     "device_scale_factor": 3, "is_mobile": True, "has_touch": True},
+    {"name": "iPad", "viewport": {"width": 820, "height": 1180},
+     "user_agent": "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+     "device_scale_factor": 2, "is_mobile": True, "has_touch": True},
+]
+
 def _launch_real_chrome(p):
     """Launch real Chrome browser (not Chromium)."""
     try:
@@ -489,9 +511,17 @@ def run_outlook_mode(count, password_config, counter=None):
                     browser = _launch_real_chrome(p)
                     _accounts_since_restart = 0
 
-                vw = random.choice([1366, 1920, 1536, 1440, 1280])
-                vh = random.choice([768, 1080, 864, 900, 720])
-                context = browser.new_context(viewport={"width": vw, "height": vh})
+                # Pick a random virtual device for this account
+                dev = random.choice(VIRTUAL_DEVICES)
+                with print_lock:
+                    print(f"{CYAN}[Outlook] Virtual device: {dev['name']}{WHITE}")
+                context = browser.new_context(
+                    viewport=dev["viewport"],
+                    user_agent=dev["user_agent"],
+                    device_scale_factor=dev["device_scale_factor"],
+                    is_mobile=dev["is_mobile"],
+                    has_touch=dev["has_touch"],
+                )
                 _apply_fingerprint_spoof(context)
                 page = context.new_page()
                 _accounts_since_restart += 1
