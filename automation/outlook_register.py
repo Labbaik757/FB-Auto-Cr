@@ -179,7 +179,8 @@ def outlook_create_account(page, password_config, counter=None):
             """Click combobox, click option, verify selection took effect."""
             combo = page.get_by_role("combobox", name=combo_name).first
             combo.wait_for(state="visible", timeout=15000)
-            combo.click()
+            # Force click: floating label overlays the button and intercepts normal clicks
+            combo.click(force=True)
             _human_pause(0.8, 1.5)
             opt = page.get_by_role("option", name=option_name, exact=True).first
             opt.wait_for(state="visible", timeout=10000)
@@ -193,7 +194,7 @@ def outlook_create_account(page, password_config, counter=None):
                 if option_name.lower() not in val.lower() and val.strip():
                     with print_lock:
                         print(f"{YELLOW}[Outlook] Combo '{combo_name}' shows '{val}', retrying...{WHITE}")
-                    combo.click()
+                    combo.click(force=True)
                     _human_pause(0.8, 1.2)
                     page.get_by_role("option", name=option_name, exact=True).first.click()
                     _human_pause(0.8, 1.2)
