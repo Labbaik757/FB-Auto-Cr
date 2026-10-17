@@ -571,8 +571,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         navigated = False
                     _human_pause(2.0, 3.0)
 
-                    # Check again for login - wait for Facebook's automatic navigation
-                    _human_pause(3.0, 5.0)
+                    # Check where Facebook navigated automatically after Continue
                     try:
                         _auto_url = page.url.lower()
                     except Exception:
