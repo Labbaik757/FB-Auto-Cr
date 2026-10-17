@@ -26,7 +26,148 @@ except ImportError:
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, LINE
 from ui.display import print_lock
 from core.counter import Counter
-from automation.browser_register import _human_pause, _human_click, _human_type
+from automation.browser_register import _human_pause, _human_type
+import math
+
+# === Anti-detect pack (Outlook ONLY - reverted from 2026-10-13, restored 2026-10-17 per user) ===
+
+def _human_mouse_move(page, x, y, steps=20):
+    """Curved human-like mouse movement."""
+    try:
+        cur = page.evaluate("() => ({x: 0, y: 0})")
+        # Simple curved path
+        for i in range(1, steps + 1):
+            t = i / steps
+            # Bezier-ish curve with slight randomness
+            mx = cur["x"] + (x - cur["x"]) * t + random.uniform(-5, 5) * math.sin(t * math.pi)
+            my = cur["y"] + (y - cur["y"]) * t + random.uniform(-5, 5) * math.sin(t * math.pi)
+            page.mouse.move(mx, my, steps=1)
+            time.sleep(random.uniform(0.01, 0.03))
+    except Exception:
+        try:
+            page.mouse.move(x, y)
+        except Exception:
+            pass
+
+def _human_click(page, locator):
+    """Human click: move mouse curved to element, then click."""
+    try:
+        box = locator.bounding_box(timeout=5000)
+        if box:
+            cx = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
+            cy = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
+            _human_mouse_move(page, cx, cy)
+            time.sleep(random.uniform(0.1, 0.3))
+        locator.click(timeout=10000)
+    except Exception:
+        try:
+            locator.click(force=True, timeout=10000)
+        except Exception:
+            pass
+
+def _human_type_typos(page, locator, text):
+    """Type with occasional typos (15% chance per char) then correct."""
+    try:
+        locator.click()
+    except Exception:
+        pass
+    time.sleep(random.uniform(0.2, 0.5))
+    for ch in text:
+        # 15% typo chance
+        if random.random() < 0.15 and ch.isalpha():
+            wrong = random.choice("abcdefghijklmnopqrstuvwxyz")
+            page.keyboard.type(wrong)
+            time.sleep(random.uniform(0.08, 0.2))
+            page.keyboard.press("Backspace")
+            time.sleep(random.uniform(0.1, 0.25))
+        page.keyboard.type(ch)
+        time.sleep(random.uniform(0.08, 0.25))
+    time.sleep(random.uniform(0.3, 0.7))
+
+def _apply_fingerprint_spoof(context):
+    """Apply fingerprint spoofing via JS (canvas, WebGL, navigator, etc)."""
+    seed = random.randint(1, 10)
+    gpus = [
+        "NVIDIA GeForce GTX 1660 SUPER",
+        "AMD Radeon RX 580",
+        "Intel UHD Graphics 630",
+        "NVIDIA GeForce RTX 3060",
+        "AMD Radeon RX 5700 XT",
+    ]
+    gpu = random.choice(gpus)
+    js = f"""
+    // Canvas noise
+    (function() {{
+        const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        HTMLCanvasElement.prototype.toDataURL = function(...args) {{
+            const ctx = this.getContext('2d');
+            if (ctx) {{
+                const imgData = ctx.getImageData(0, 0, this.width, this.height);
+                for (let i = 0; i < imgData.data.length; i += 4) {{
+                    imgData.data[i] += Math.floor(Math.random() * {seed}) - {seed // 2};
+                }}
+                ctx.putImageData(imgData, 0, 0);
+            }}
+            return origToDataURL.apply(this, args);
+        }};
+    }})();
+    // WebGL GPU spoof
+    (function() {{
+        const origGetParam = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(param) {{
+            if (param === 37445) return "Google Inc. (NVIDIA)";
+            if (param === 37446) return "{gpu}";
+            return origGetParam.apply(this, arguments);
+        }};
+    }})();
+    // navigator.webdriver -> false
+    Object.defineProperty(navigator, 'webdriver', {{ get: () => false }});
+    // Plugins
+    Object.defineProperty(navigator, 'plugins', {{ get: () => [1,2,3,4] }});
+    // AudioContext noise
+    (function() {{
+        const origGetChannelData = AudioBuffer.prototype.getChannelData;
+        AudioBuffer.prototype.getChannelData = function(...args) {{
+            const data = origGetChannelData.apply(this, args);
+            for (let i = 0; i < data.length; i += 100) {{
+                data[i] += (Math.random() - 0.5) * 0.001;
+            }}
+            return data;
+        }};
+    }})();
+    // Screen spoof (match common viewport)
+    // Fonts check always true
+    (function() {{
+        const origCheck = document.fonts.check;
+        document.fonts.check = function(...args) {{ return true; }};
+    }})();
+    """
+    try:
+        context.add_init_script(js)
+    except Exception:
+        pass
+
+def _launch_real_chrome(p):
+    """Launch real Chrome browser (not Chromium)."""
+    try:
+        browser = p.chromium.launch(
+            channel="chrome",
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        with print_lock:
+            print(f"{CYAN}[Outlook] Real Chrome launched{WHITE}")
+        return browser
+    except Exception as e:
+        with print_lock:
+            print(f"{YELLOW}[Outlook] Real Chrome failed ({e}), falling back to Chromium{WHITE}")
+        _exe = os.path.expandvars(
+            r"C:\Users\Rizvi Lion\AppData\Local\ms-playwright\chromium-1243\chrome-win\chrome.exe"
+        )
+        kwargs = dict(headless=False, args=["--disable-blink-features=AutomationControlled"])
+        if os.path.exists(_exe):
+            kwargs["executable_path"] = _exe
+        return p.chromium.launch(**kwargs)
 
 
 def _gen_email_username(fake):
@@ -327,16 +468,8 @@ def run_outlook_mode(count, password_config, counter=None):
         counter = Counter()
 
     with sync_playwright() as p:
-        _exe = os.path.expandvars(
-            r"C:\Users\Rizvi Lion\AppData\Local\ms-playwright\chromium-1243\chrome-win\chrome.exe"
-        )
-        _launch_kwargs = dict(
-            headless=False,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        if os.path.exists(_exe):
-            _launch_kwargs["executable_path"] = _exe
-        browser = p.chromium.launch(**_launch_kwargs)
+        browser = _launch_real_chrome(p)
+        _accounts_since_restart = 0
 
         try:
             for idx in range(1, count + 1):
@@ -344,8 +477,24 @@ def run_outlook_mode(count, password_config, counter=None):
                     print(f"\n{LINE}")
                     print(f"{CYAN}[{idx}/{count}] Creating Outlook account...{WHITE}")
 
-                context = browser.new_context()
+                # Restart browser every 4 accounts (fresh fingerprint)
+                if _accounts_since_restart >= 4:
+                    with print_lock:
+                        print(f"{CYAN}[Outlook] Restarting browser (4 accounts done)...{WHITE}")
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+                    time.sleep(random.uniform(1.5, 3.0))
+                    browser = _launch_real_chrome(p)
+                    _accounts_since_restart = 0
+
+                vw = random.choice([1366, 1920, 1536, 1440, 1280])
+                vh = random.choice([768, 1080, 864, 900, 720])
+                context = browser.new_context(viewport={"width": vw, "height": vh})
+                _apply_fingerprint_spoof(context)
                 page = context.new_page()
+                _accounts_since_restart += 1
 
                 try:
                     result = outlook_create_account(page, password_config, counter)
