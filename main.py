@@ -45,8 +45,28 @@ def run_create():
     print(f" {GREEN}[{RED}01{GREEN}] HTTP Mode {WHITE}(Fast, direct requests)")
     print(f" {GREEN}[{RED}02{GREEN}] Browser Mode {WHITE}(Playwright, human-like, slower)")
     print(f" {GREEN}[{RED}03{GREEN}] Facebook Automation {WHITE}(Reviews, marketplace & more)")
+    print(f" {GREEN}[{RED}04{GREEN}] Outlook Email {WHITE}(Create Outlook/Hotmail accounts)")
     print(f"{LINE}")
-    mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2/3) [1] {EKL} ").strip()
+    mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2/3/4) [1] {EKL} ").strip()
+    if mode_choice == "4":
+        # Outlook Email Creation mode
+        from automation.outlook_register import run_outlook_mode
+        from core.password_manager import select_password_config
+        config_state["mode"] = "Outlook Email"
+        password_config = select_password_config(config_state, lambda: render_config(config_state))
+        render_config(config_state)
+        try:
+            _count = int(input(f" {GREEN}[{RED}●{GREEN}] How many Outlook accounts? {WHITE}").strip())
+        except Exception:
+            _count = 1
+        render_config(config_state)
+        input(f"\n {WHITE}Press Enter to start Outlook automation... ")
+        logo()
+        counter = Counter()
+        run_outlook_mode(_count, password_config, counter)
+        input(f"\n {WHITE}Press Enter to exit... ")
+        return
+
     if mode_choice == "3":
         # Facebook Automation: reviews, marketplace & more (does not touch mode 1/2)
         from automation.fb_automation import run_reviews_mode
