@@ -30,12 +30,18 @@ from automation.browser_register import _human_pause, _human_click, _human_type
 
 
 def _gen_email_username(fake):
-    """Generate a random Outlook username (like lilydodson345)."""
-    base = fake.first_name().lower() + fake.last_name().lower()
-    # Clean non-alpha
-    base = "".join(c for c in base if c.isalpha())
-    num = random.randint(100, 9999)
-    return f"{base}{num}"
+    """Generate a random Outlook username with varied patterns."""
+    first = "".join(c for c in fake.first_name().lower() if c.isalpha())
+    last = "".join(c for c in fake.last_name().lower() if c.isalpha())
+    num = random.randint(10, 9999)
+    pattern = random.choice([
+        f"{first}{last}{num}",           # johndoe123
+        f"{first}.{last}{num}",          # john.doe123
+        f"{first}{num}",                 # john123
+        f"{first}_{last}{num}",          # john_doe123
+        f"{last}{first}{num}",           # doejohn123
+    ])
+    return pattern
 
 
 def _press_and_hold_captcha(page):
@@ -145,6 +151,8 @@ def outlook_create_account(page, password_config, counter=None):
         # Step 1: Email
         page.goto("https://signup.live.com/signup?lic=1", wait_until="domcontentloaded", timeout=30000)
         _human_pause(2.0, 3.0)
+        # Random "reading the page" pause (human-like)
+        time.sleep(random.uniform(1.0, 3.0))
         email_field = page.get_by_role("textbox", name="Email").first
         email_field.wait_for(state="visible", timeout=15000)
         _human_type(page, email_field, email)
@@ -344,9 +352,9 @@ def run_outlook_mode(count, password_config, counter=None):
                         pass
 
                 if idx < count:
-                    pause = random.uniform(3, 5)
+                    pause = random.uniform(30, 60)
                     with print_lock:
-                        print(f"{YELLOW}Waiting {pause:.0f}s before next...{WHITE}")
+                        print(f"{YELLOW}Waiting {pause:.0f}s before next (anti-block)...{WHITE}")
                     time.sleep(pause)
         finally:
             browser.close()
