@@ -49,12 +49,27 @@ def _press_and_hold_captcha(page):
     Scripted holds get rejected; slow human-style works.
     Returns True if verification passed."""
     try:
+        # Wait for challenge heading first (iframe takes time to load)
+        try:
+            page.get_by_text("Let's prove you're human").first.wait_for(state="visible", timeout=15000)
+        except Exception:
+            pass
+        _human_pause(2.0, 3.0)
         # Locate the nested iframe chain
-        outer = page.frame_locator('iframe[name="Verification challenge"]')
-        inner = outer.frame_locator('iframe[name="Human verification challenge"]')
+        # NOTE: "Verification challenge" is the title attribute, NOT name attribute
+        outer = page.frame_locator('iframe[title="Verification challenge"]')
+        inner = outer.frame_locator('iframe[title="Human verification challenge"]')
         # Find the press-and-hold button
         btn = inner.get_by_role("button", name="Press and hold").first
-        btn.wait_for(state="visible", timeout=15000)
+        try:
+            btn.wait_for(state="visible", timeout=15000)
+        except Exception:
+            # Fallback: Arkose URL-based locator (more reliable)
+            with print_lock:
+                print(f"{YELLOW}[Outlook] Trying Arkose URL fallback...{WHITE}")
+            outer = page.frame_locator('iframe[src*="arkoselabs"]')
+            btn = outer.get_by_role("button", name="Press and hold").first
+            btn.wait_for(state="visible", timeout=15000)
         with print_lock:
             print(f"{CYAN}[Outlook] CAPTCHA found, doing human-like press-and-hold...{WHITE}")
 
