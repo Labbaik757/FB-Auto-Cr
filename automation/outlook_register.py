@@ -402,12 +402,18 @@ def outlook_create_account(page, password_config, counter=None):
         with print_lock:
             print(f"{GREEN}[Outlook] Name: {first_name} {last_name}{WHITE}")
 
-        # Step 5: Press-and-hold CAPTCHA
-        if not _press_and_hold_captcha(page):
-            with print_lock:
-                print(f"{YELLOW}[Outlook] CAPTCHA needs manual solve - waiting 30s...{WHITE}")
-            time.sleep(30)
-        _human_pause(3.0, 5.0)
+        # Step 5: CAPTCHA - MANUAL (user solves it themselves)
+        with print_lock:
+            print(f"\n{YELLOW}{'='*50}{WHITE}")
+            print(f"{YELLOW}[Outlook] CAPTCHA aya hai - khud solve karo!{WHITE}")
+            print(f"{YELLOW}[Outlook] Browser mein press-and-hold karo,{WHITE}")
+            print(f"{YELLOW}[Outlook] phir yahan Enter dabao...{WHITE}")
+            print(f"{YELLOW}{'='*50}\n{WHITE}")
+        try:
+            input(f"{CYAN}[Outlook] CAPTCHA solve karke Enter dabao: {WHITE}")
+        except Exception:
+            pass
+        _human_pause(2.0, 3.0)
 
         # Step 6: Check result (account created automatically after verification)
         cur_url = page.url.lower()
