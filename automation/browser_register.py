@@ -513,24 +513,34 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         if on_confirm_page or "code" in page_content or "confirm" in page_content or "otp" in page_content:
             code = None
 
-            # Wait for OTP page to fully load, then click resend 3x to trigger OTP
+            # Wait for OTP page to fully load
             _human_pause(2.0, 3.0)
-            resend_count = _click_resend_twice(page)
-            if resend_count == 0:
-                with print_lock:
-                    print(f"{YELLOW}[Browser] Resend button not found, trying OTP fetch anyway{WHITE}")
-
-            # Auto-fetch OTP from SMS URL if provided
+            # Smart resend+fetch: interleave resends with OTP checks (faster when OTP arrives early)
+            code = None
             if sms_url:
                 with print_lock:
                     print(f"{CYAN}[Browser] Auto-fetching OTP from SMS link...{WHITE}")
-                code = _fetch_otp_from_url(page, sms_url)
+                for _round in range(3):
+                    _click_resend_twice(page)  # Click resend (up to 3x per round internally)
+                    # Check OTP for ~7s after each resend round
+                    code = _fetch_otp_from_url(page, sms_url, timeout=7, interval=1)
+                    if code:
+                        break
+                    if _round < 2:
+                        with print_lock:
+                            print(f"{YELLOW}[Browser] No OTP yet, resending... ({_round+2}/3){WHITE}")
                 if code:
                     with print_lock:
                         print(f"{GREEN}[Browser] OTP received: {code}{WHITE}")
                 else:
                     with print_lock:
                         print(f"{YELLOW}[Browser] Auto-fetch failed, manual input needed.{WHITE}")
+            else:
+                # No SMS URL: just do the resends
+                resend_count = _click_resend_twice(page)
+                if resend_count == 0:
+                    with print_lock:
+                        print(f"{YELLOW}[Browser] Resend button not found{WHITE}")
 
             # Auto-fetch failed -> 10s manual entry window, then skip
             if not code:
