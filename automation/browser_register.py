@@ -411,9 +411,9 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             submitted = True
             with print_lock:
                 print(f"{GREEN}[Browser] Submit done (navigated: {navigated}){WHITE}")
-            # Smart wait: proceed as soon as OTP page/input appears (max 15s)
+            # Smart wait: proceed as soon as OTP page/input appears (max 8s)
             _otp_ready = False
-            for _ in range(30):
+            for _ in range(16):
                 try:
                     _url = page.url.lower()
                     if "confirm" in _url or "checkpoint" in _url or "otp" in _url:
@@ -532,9 +532,8 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         if on_confirm_page or "code" in page_content or "confirm" in page_content or "otp" in page_content:
             code = None
 
-            # Wait for OTP page to fully load
-            _human_pause(2.0, 3.0)
-            # Smart resend+fetch: interleave resends with OTP checks (faster when OTP arrives early)
+            # No extra wait - go straight to resend (user: OTP comes fast)
+            # Smart resend+fetch: interleave resends with OTP checks
             code = None
             if sms_url:
                 with print_lock:
