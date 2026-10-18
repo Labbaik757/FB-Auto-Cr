@@ -27,62 +27,19 @@ from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, LINE
 from ui.display import print_lock
 from core.counter import Counter
 from automation.browser_register import _human_pause, _human_type
-import math
 
 # === Anti-detect pack (Outlook ONLY - reverted from 2026-10-13, restored 2026-10-17 per user) ===
 
 def _human_mouse_move(page, x, y, steps=20):
-    """Curved human-like mouse movement."""
+    """Human-like mouse movement with slight curve."""
     try:
-        cur = page.evaluate("() => ({x: 0, y: 0})")
-        # Simple curved path
-        for i in range(1, steps + 1):
-            t = i / steps
-            # Bezier-ish curve with slight randomness
-            mx = cur["x"] + (x - cur["x"]) * t + random.uniform(-5, 5) * math.sin(t * math.pi)
-            my = cur["y"] + (y - cur["y"]) * t + random.uniform(-5, 5) * math.sin(t * math.pi)
-            page.mouse.move(mx, my, steps=1)
-            time.sleep(random.uniform(0.01, 0.03))
-    except Exception:
-        try:
-            page.mouse.move(x, y)
-        except Exception:
-            pass
-
-def _human_click(page, locator):
-    """Human click: move mouse curved to element, then click."""
-    try:
-        box = locator.bounding_box(timeout=5000)
-        if box:
-            cx = box["x"] + box["width"] / 2 + random.uniform(-3, 3)
-            cy = box["y"] + box["height"] / 2 + random.uniform(-3, 3)
-            _human_mouse_move(page, cx, cy)
-            time.sleep(random.uniform(0.1, 0.3))
-        locator.click(timeout=10000)
-    except Exception:
-        try:
-            locator.click(force=True, timeout=10000)
-        except Exception:
-            pass
-
-def _human_type_typos(page, locator, text):
-    """Type with occasional typos (15% chance per char) then correct."""
-    try:
-        locator.click()
+        # Playwright native smooth move with steps (no fake start position)
+        page.mouse.move(x + random.uniform(-3, 3), y + random.uniform(-3, 3), steps=steps)
+        time.sleep(random.uniform(0.1, 0.3))
+        # Small corrective movement (human-like adjustment)
+        page.mouse.move(x, y, steps=5)
     except Exception:
         pass
-    time.sleep(random.uniform(0.2, 0.5))
-    for ch in text:
-        # 15% typo chance
-        if random.random() < 0.15 and ch.isalpha():
-            wrong = random.choice("abcdefghijklmnopqrstuvwxyz")
-            page.keyboard.type(wrong)
-            time.sleep(random.uniform(0.08, 0.2))
-            page.keyboard.press("Backspace")
-            time.sleep(random.uniform(0.1, 0.25))
-        page.keyboard.type(ch)
-        time.sleep(random.uniform(0.08, 0.25))
-    time.sleep(random.uniform(0.3, 0.7))
 
 def _apply_fingerprint_spoof(context):
     """Apply fingerprint spoofing via JS (canvas, WebGL, navigator, etc)."""
