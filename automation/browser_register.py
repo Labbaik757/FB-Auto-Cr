@@ -45,32 +45,48 @@ except ImportError:
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, LINE
 from ui.display import print_lock
 from core.counter import Counter
+from core.human_behavior import (
+    human_pause as _hb_pause,
+    human_click as _hb_click,
+    human_type as _hb_type,
+    human_mouse_move as _hb_mouse_move,
+    human_scroll as _hb_scroll,
+)
 
 
 def _human_pause(min_s=1.0, max_s=3.0):
-    """Fixed 1 second pause per user."""
-    time.sleep(1.0)
+    """Random pause between actions (shared human behavior)."""
+    _hb_pause(min_s, max_s)
 
 
 def _human_click(page, locator):
-    """Simple click."""
-    locator.click()
+    """Click using Bezier mouse movement (shared human behavior)."""
+    _hb_click(page, locator)
+
+
+def _human_mouse_move(page, x, y, steps=20):
+    """Move mouse along Bezier curve (shared human behavior)."""
+    _hb_mouse_move(page, x, y)
+
+
+def _human_scroll(page, min_scrolls=1, max_scrolls=3):
+    """Human-like scroll with reading pauses (shared human behavior)."""
+    _hb_scroll(page, min_scrolls, max_scrolls)
 
 
 def _human_type(page, selector, text, min_delay=80, max_delay=250):
     """
-    Type text character by character with random delays,
-    like a human typing. Accepts CSS selector string or Locator.
+    Type text naturally with typos and variable speed (shared human behavior).
+    Accepts CSS selector string or Locator.
     """
     element = selector if hasattr(selector, "click") else page.locator(selector)
-    element.click()
-    _human_pause(0.3, 0.8)
-    for i, char in enumerate(text):
-        element.press_sequentially(char, delay=random.randint(min_delay, max_delay))
-        # Occasional mid-typing hesitation (like thinking what to type next)
-        if i > 0 and i < len(text) - 1 and random.random() < 0.08:
-            time.sleep(random.uniform(0.5, 1.2))
-    _human_pause(0.5, 1.5)
+    try:
+        element.click()
+    except Exception:
+        pass
+    _hb_pause(0.3, 0.8)
+    _hb_type(element, text, make_typos=True)
+    _hb_pause(0.5, 1.5)
 
 
 def _select_birthday(page, day, month, year):
