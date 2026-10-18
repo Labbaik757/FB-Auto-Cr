@@ -393,7 +393,10 @@ def run_outlook_mode(count, password_config, counter=None):
         counter = Counter()
 
     with sync_playwright() as p:
-        browser = _launch_real_chrome(p)
+        from core.browser_launcher import get_browser_choice, launch_browser
+        _browser_type = get_browser_choice()
+        browser, _is_cloak = launch_browser(p, _browser_type, headless=False)
+        _launch_fn = lambda pw: launch_browser(pw, _browser_type, headless=False)[0]
         _accounts_since_restart = 0
 
         try:
@@ -411,7 +414,7 @@ def run_outlook_mode(count, password_config, counter=None):
                     except Exception:
                         pass
                     time.sleep(random.uniform(1.5, 3.0))
-                    browser = _launch_real_chrome(p)
+                    browser = _launch_fn(p)
                     _accounts_since_restart = 0
 
                 # Pick a random virtual device for this account
