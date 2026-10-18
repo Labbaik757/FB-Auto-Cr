@@ -51,7 +51,6 @@ def run_create():
     if mode_choice == "4":
         # Outlook Email Creation mode
         from automation.outlook_register import run_outlook_mode
-        from core.password_manager import select_password_config
         config_state["mode"] = "Outlook Email"
         password_config = select_password_config(config_state, lambda: render_config(config_state))
         render_config(config_state)
