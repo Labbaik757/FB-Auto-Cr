@@ -43,7 +43,7 @@ def run_create():
 
     # Mode selection: HTTP (default) or Browser automation
     print(f" {GREEN}[{RED}01{GREEN}] HTTP Mode {WHITE}(Fast, direct requests)")
-    print(f" {GREEN}[{RED}02{GREEN}] Browser Mode {WHITE}(Playwright, human-like, slower)")
+    print(f" {GREEN}[{RED}02{GREEN}] FB Auto Create {WHITE}(Playwright, human-like, slower)")
     print(f" {GREEN}[{RED}03{GREEN}] Facebook Automation {WHITE}(Reviews, marketplace & more)")
     print(f" {GREEN}[{RED}04{GREEN}] Outlook Email {WHITE}(Create Outlook/Hotmail accounts)")
     print(f"{LINE}")
