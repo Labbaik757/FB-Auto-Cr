@@ -33,20 +33,10 @@ except ImportError:
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN, LINE
 from ui.display import print_lock
 from core.counter import Counter
-from automation.browser_register import _human_pause, _human_type
+from automation.browser_register import _human_pause, _human_type, _human_mouse_move, _human_scroll
 
 # === Anti-detect pack (Outlook ONLY - reverted from 2026-10-13, restored 2026-10-17 per user) ===
 
-def _human_mouse_move(page, x, y, steps=20):
-    """Human-like mouse movement with slight curve."""
-    try:
-        # Playwright native smooth move with steps (no fake start position)
-        page.mouse.move(x + random.uniform(-3, 3), y + random.uniform(-3, 3), steps=steps)
-        time.sleep(random.uniform(0.1, 0.3))
-        # Small corrective movement (human-like adjustment)
-        page.mouse.move(x, y, steps=5)
-    except Exception:
-        pass
 
 def _apply_fingerprint_spoof(context):
     """Apply fingerprint spoofing via JS (canvas, WebGL, navigator, etc)."""
