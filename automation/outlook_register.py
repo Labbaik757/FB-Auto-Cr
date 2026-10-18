@@ -18,6 +18,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from faker import Faker
 
 try:
+    from playwright_stealth import stealth_sync as _stealth_sync
+    _HAS_STEALTH = True
+except ImportError:
+    _HAS_STEALTH = False
+    _stealth_sync = None
+
+try:
     from playwright.sync_api import sync_playwright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
@@ -126,6 +133,33 @@ VIRTUAL_DEVICES = [
      "device_scale_factor": 2, "is_mobile": True, "has_touch": True},
 ]
 
+def _apply_trace_removal(page):
+    """Remove ALL automation traces (Playwright-specific + Selenium leftovers)."""
+    try:
+        page.add_init_script("""
+        ['__playwright', '__pw_manual', '_playwrightBinding',
+         '__playwright__binding__', '__webdriver_evaluate',
+         '__selenium_evaluate', '__webdriver_script_function',
+         'cdc_adoQpoasnfa76pfcZLmcfl_Array', 'cdc_adoQpoasnfa76pfcZLmcfl_Promise',
+         'cdc_adoQpoasnfa76pfcZLmcfl_Symbol', 'domAutomation',
+         'domAutomationController', '_selenium', 'calledSelenium'
+        ].forEach(k => { try { delete window[k]; } catch(_) {} });
+        if (!window.chrome) {
+            window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){} };
+        }
+        try {
+            const _oq = Permissions.prototype.query;
+            Permissions.prototype.query = function(d) {
+                if (d.name === 'notifications')
+                    return Promise.resolve({state: 'denied', onchange: null});
+                return _oq.call(this, d);
+            };
+        } catch(_) {}
+        """)
+    except Exception:
+        pass
+
+
 def _launch_real_chrome(p):
     """Launch real Chrome browser (not Chromium)."""
     try:
@@ -162,90 +196,6 @@ def _gen_email_username(fake):
         f"{last}{first}{num}",           # doejohn123
     ])
     return pattern
-
-
-def _press_and_hold_captcha(page):
-    """Human-like press-and-hold for Arkose verification.
-    Scripted holds get rejected; slow human-style works.
-    Returns True if verification passed."""
-    try:
-        # Wait for challenge heading first (iframe takes time to load)
-        try:
-            page.get_by_text("Let's prove you're human").first.wait_for(state="visible", timeout=15000)
-        except Exception:
-            pass
-        _human_pause(2.0, 3.0)
-        # Locate the nested iframe chain
-        # NOTE: "Verification challenge" is the title attribute, NOT name attribute
-        outer = page.frame_locator('iframe[title="Verification challenge"]')
-        inner = outer.frame_locator('iframe[title="Human verification challenge"]')
-        # Find the press-and-hold button
-        btn = inner.get_by_role("button", name="Press and hold").first
-        try:
-            btn.wait_for(state="visible", timeout=15000)
-        except Exception:
-            # Fallback: Arkose URL-based locator (more reliable)
-            with print_lock:
-                print(f"{YELLOW}[Outlook] Trying Arkose URL fallback...{WHITE}")
-            outer = page.frame_locator('iframe[src*="arkoselabs"]')
-            btn = outer.get_by_role("button", name="Press and hold").first
-            btn.wait_for(state="visible", timeout=15000)
-        with print_lock:
-            print(f"{CYAN}[Outlook] CAPTCHA found, doing human-like press-and-hold...{WHITE}")
-
-        # Human-like: move cursor to button slowly, hover, then hold
-        box = btn.bounding_box(timeout=10000)
-        if box:
-            cx = box["x"] + box["width"] / 2
-            cy = box["y"] + box["height"] / 2
-            # Slow cursor approach (human-like)
-            page.mouse.move(cx + random.randint(50, 150), cy + random.randint(30, 80), steps=10)
-            time.sleep(random.uniform(0.5, 1.0))
-            page.mouse.move(cx, cy, steps=15)
-            time.sleep(random.uniform(0.8, 1.5))  # Hover pause
-
-        # Press and hold for ~10 seconds with slight movement (human tremor)
-        btn_handle = btn.element_handle(timeout=10000)
-        box = btn_handle.bounding_box()
-        cx = box["x"] + box["width"] / 2
-        cy = box["y"] + box["height"] / 2
-        page.mouse.move(cx, cy)
-        page.mouse.down()
-        hold_time = random.uniform(9.5, 11.0)
-        start = time.time()
-        while time.time() - start < hold_time:
-            # Tiny human-like tremor during hold
-            page.mouse.move(cx + random.uniform(-2, 2), cy + random.uniform(-2, 2), steps=1)
-            time.sleep(0.3)
-        # Smooth release
-        time.sleep(random.uniform(0.3, 0.6))
-        page.mouse.up()
-        with print_lock:
-            print(f"{CYAN}[Outlook] Hold released, waiting for verification...{WHITE}")
-        time.sleep(random.uniform(3.0, 5.0))
-
-        # Check if verification passed (page should advance past CAPTCHA)
-        try:
-            page.wait_for_url(lambda url: "signup.live.com" not in url or "challenge" not in url.lower(), timeout=15000)
-        except Exception:
-            pass
-        # If we're no longer on the challenge, it passed
-        cur = page.url.lower()
-        if "challenge" not in cur and "verify" not in cur:
-            return True
-        # Also check: challenge iframe gone = passed
-        try:
-            if btn.count() == 0:
-                return True
-        except Exception:
-            return True
-        with print_lock:
-            print(f"{YELLOW}[Outlook] CAPTCHA may need retry{WHITE}")
-        return False
-    except Exception as e:
-        with print_lock:
-            print(f"{RED}[Outlook] CAPTCHA failed: {e}{WHITE}")
-        return False
 
 
 def outlook_create_account(page, password_config, counter=None):
@@ -487,6 +437,13 @@ def run_outlook_mode(count, password_config, counter=None):
                 )
                 _apply_fingerprint_spoof(context)
                 page = context.new_page()
+                # Apply stealth: playwright-stealth + full trace removal
+                if _HAS_STEALTH and _stealth_sync:
+                    try:
+                        _stealth_sync(page)
+                    except Exception:
+                        pass
+                _apply_trace_removal(page)
                 _accounts_since_restart += 1
 
                 try:
