@@ -715,13 +715,17 @@ def run_browser_mode(numbers, password_config, counter=None):
 
                     result = browser_create_account(page, number, password, counter, sms_url)
 
-                    if result["status"] == "success":
+                    if result["status"] == "success" or result.get("reason") == "profile_verification_pending":
                         # Save to output (same format as HTTP version)
+                        # Also save verification-pending accounts so user can verify manually
                         from core.path_manager import get_output_dir
                         output_dir = get_output_dir()
                         os.makedirs(output_dir, exist_ok=True)
                         with open(os.path.join(output_dir, "browser_accounts.txt"), "a") as f:
                             f.write(result["result_line"] + "\n")
+                        if result.get("reason") == "profile_verification_pending":
+                            with print_lock:
+                                print(f"{YELLOW}[Browser] Saved for manual verification{WHITE}")
 
                 except Exception as e:
                     with print_lock:
@@ -744,7 +748,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                         # Simple: re-run browser_create_account once more
                         try:
                             result = browser_create_account(page, number, password, counter, sms_url)
-                            if result["status"] == "success":
+                            if result["status"] == "success" or result.get("reason") == "profile_verification_pending":
                                 from core.path_manager import get_output_dir
                                 output_dir = get_output_dir()
                                 os.makedirs(output_dir, exist_ok=True)
