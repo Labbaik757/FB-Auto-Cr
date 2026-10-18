@@ -65,8 +65,11 @@ def _human_type(page, selector, text, min_delay=80, max_delay=250):
     element = selector if hasattr(selector, "click") else page.locator(selector)
     element.click()
     _human_pause(0.3, 0.8)
-    for char in text:
+    for i, char in enumerate(text):
         element.press_sequentially(char, delay=random.randint(min_delay, max_delay))
+        # Occasional mid-typing hesitation (like thinking what to type next)
+        if i > 0 and i < len(text) - 1 and random.random() < 0.08:
+            time.sleep(random.uniform(0.5, 1.2))
     _human_pause(0.5, 1.5)
 
 
@@ -298,6 +301,16 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         with print_lock:
             print(f"{CYAN}[Browser] Page URL: {page.url}{WHITE}")
             print(f"{CYAN}[Browser] Page title: {page.title()}{WHITE}")
+            # Human-like: scroll and look around before filling form (not a bot that types instantly)
+            try:
+                page.mouse.move(random.randint(200, 800), random.randint(200, 500))
+                time.sleep(random.uniform(0.5, 1.2))
+                page.evaluate("window.scrollBy(0, 200)")
+                time.sleep(random.uniform(0.8, 1.8))
+                page.evaluate("window.scrollBy(0, -200)")
+                time.sleep(random.uniform(0.5, 1.0))
+            except Exception:
+                pass
 
         # Wait for form to load (positional check)
         try:
@@ -316,11 +329,17 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             return {"status": "failed", "number": phone_number, "reason": "form not loaded"}
 
         # Fill by position (was working): 3 text inputs + 1 password
+        # Variable order: humans don't always fill top-to-bottom (30% shuffled)
         text_inputs = page.locator('input[type="text"]')
         pwd_inputs = page.locator('input[type="password"]')
-        _human_type(page, text_inputs.nth(0), first_name)
-        _human_type(page, text_inputs.nth(1), last_name)
-        _human_type(page, text_inputs.nth(2), phone_number)
+        _fill_plan = [(0, first_name), (1, last_name), (2, phone_number)]
+        if random.random() < 0.3:
+            random.shuffle(_fill_plan)
+        for _idx, _val in _fill_plan:
+            _human_type(page, text_inputs.nth(_idx), _val)
+            # Random thinking pause between fields (human-like hesitation)
+            if random.random() < 0.4:
+                time.sleep(random.uniform(1.0, 2.5))
         _human_type(page, pwd_inputs.nth(0), password)
 
         # Select birthday
