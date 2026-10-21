@@ -23,7 +23,9 @@ google-generativeai
 # ================= TERMUX (Mobile) SETUP =================
 # requirements.txt sirf Python packages lagata hai. Termux me tool
 # chalane ke liye pehle ye SYSTEM packages lagao (ek dafa hi):
-#     pkg update && pkg install python git android-tools
+#     pkg update && pkg install python git android-tools libc++
+#   - libc++ ke baghair Termux ka adb chalta hi nahi
+#     ("CANNOT LINK EXECUTABLE" error ata hai).
 #   - android-tools se 'adb' milta hai: Mode 2 ke Android Setup
 #     (Facebook Lite) ke liye lazmi hai - Termux usi phone ke asal
 #     Lite app ko Wireless ADB se launch/control karta hai.
