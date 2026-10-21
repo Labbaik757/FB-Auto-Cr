@@ -469,6 +469,192 @@ def _lite_version_name(adb, serial):
     return "?"
 
 
+# ----------------------------------------------------------------------
+# AUTO SETUP (ek dafa): jo folder/file chahiye code khud banata hai,
+# aur Lite ke kuch versions khud rakh leta hai - baar baar nahi.
+# ----------------------------------------------------------------------
+_LITE_DOWNLOAD_SOURCES = [
+    ("latest", "https://d.apkpure.com/b/APK/com.facebook.lite"
+                 "?version=latest"),
+    ("older-1", "https://d.apkpure.com/b/APK/com.facebook.lite"
+                "?version=437.0.0.0.86"),
+    ("older-2", "https://d.apkpure.com/b/APK/com.facebook.lite"
+                "?version=402.0.0.0.97"),
+]
+
+
+def _lite_apk_dirs():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return [os.path.normpath(p) for p in (
+        os.path.join(os.getcwd(), "lite_apks"),
+        os.path.join(here, "..", "lite_apks"),
+        os.path.join(os.path.expanduser("~"), "lite_apks"),
+        "/sdcard/lite_apks")]
+
+
+def _apk_ok(path):
+    """Download/pull hui file asal APK hai ya nahi (size + PK magic)."""
+    try:
+        if os.path.getsize(path) < 1_000_000:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(2) == b"PK"
+    except Exception:
+        return False
+
+
+def _pull_installed_lite_apk(adb, serial, dest_dir):
+    """Phone par lagi hui ASAL Lite ka APK nikal kar folder me rakh
+    lo - ye sab se mehfooz version hai kyunke ye phone ka apna
+    official installed app hai. Filename me version bhi ajata hai."""
+    out = _adb(adb, serial, "shell", "pm", "path", LITE_PACKAGE)
+    remote = ""
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if line.startswith("package:") and line.endswith("base.apk"):
+            remote = line[len("package:"):]
+            break
+    if not remote:
+        return None
+    ver = _lite_version_name(adb, serial).replace(" ", "_") or "phone"
+    dest = os.path.join(dest_dir, f"facebook-lite-{ver}-phone.apk")
+    if os.path.exists(dest):
+        return dest
+    _adb(adb, serial, "pull", remote, dest, timeout=180)
+    if _apk_ok(dest):
+        return dest
+    try:
+        os.remove(dest)
+    except Exception:
+        pass
+    return None
+
+
+def _download_lite_apk(url, dest):
+    """Ek version download karke rakho; nakami par file hata do."""
+    try:
+        import requests
+        with requests.get(
+                url, stream=True, timeout=60,
+                headers={"User-Agent": "Mozilla/5.0 (Linux; Android 13)"}
+        ) as r:
+            r.raise_for_status()
+            with open(dest, "wb") as fh:
+                for chunk in r.iter_content(262144):
+                    if chunk:
+                        fh.write(chunk)
+    except Exception:
+        pass
+    if _apk_ok(dest):
+        return True
+    try:
+        os.remove(dest)
+    except Exception:
+        pass
+    return False
+
+
+def _ensure_lite_setup(adb, serial):
+    """Ek-dafa auto setup: (1) lite_apks folder khud banta hai,
+    (2) Number_List.txt na ho to khali template ban jata hai,
+    (3) output folder tayyar, (4) Lite ke versions: folder me 2 se
+    kam hon to phone wali asal Lite nikal kar + downloads try karke
+    rakh leta hai. 2+ versions pehle se hon to kuch nahi karta."""
+    # 1) lite_apks folder
+    dest_dir = None
+    for d in _lite_apk_dirs():
+        try:
+            os.makedirs(d, exist_ok=True)
+            if dest_dir is None:
+                dest_dir = d
+        except Exception:
+            continue
+    # 2) Number_List.txt template (ho to haath nahi lagta)
+    for base in (os.getcwd(),
+                 os.path.dirname(os.path.dirname(
+                     os.path.abspath(__file__)))):
+        _nl = os.path.join(base, "Number_List.txt")
+        if os.path.exists(_nl):
+            break
+        try:
+            with open(_nl, "w", encoding="utf-8") as fh:
+                fh.write("# Number_List - ek line me ek number\n"
+                         "# OTP auto chahiye to number ke sath us ka "
+                         "SMS link bhi do:\n"
+                         "# +15551234567|https://sms-link.example/xxxx\n"
+                         "# Sirf number bhi chalega (code haath se "
+                         "likhna hoga):\n"
+                         "# +15557654321\n")
+            with print_lock:
+                print(f"{CYAN}[Lite] Number_List.txt khud bana di hai "
+                      f"({_nl}) - numbers is me daal dena{WHITE}")
+            break
+        except Exception:
+            continue
+    # 3) Output folder
+    try:
+        from core.path_manager import get_output_dir
+        os.makedirs(get_output_dir(), exist_ok=True)
+    except Exception:
+        pass
+    # 4) Versions - pehle se 2+ hon to bus
+    if len(_find_lite_apks()) >= 2 or dest_dir is None:
+        return
+    with print_lock:
+        print(f"{CYAN}[Lite] Lite versions khud rakh raha hoon (ek "
+              f"dafa ka kaam hai)...{WHITE}")
+    got = []
+    if serial:
+        pulled = _pull_installed_lite_apk(adb, serial, dest_dir)
+        if pulled:
+            got.append(pulled)
+            with print_lock:
+                print(f"{GREEN}[Lite] Phone wali asal Lite rakh li: "
+                      f"{os.path.basename(pulled)}{WHITE}")
+    seen = set()
+    for _p in _find_lite_apks():
+        try:
+            seen.add(os.path.getsize(_p))
+        except Exception:
+            pass
+    for label, url in _LITE_DOWNLOAD_SOURCES:
+        if len(_find_lite_apks()) >= 3:
+            break
+        dest = os.path.join(dest_dir, f"facebook-lite-{label}.apk")
+        if os.path.exists(dest):
+            continue
+        if _download_lite_apk(url, dest):
+            try:
+                size = os.path.getsize(dest)
+            except Exception:
+                size = 0
+            if size in seen:  # wahi file dobara agayi - hata do
+                try:
+                    os.remove(dest)
+                except Exception:
+                    pass
+                continue
+            seen.add(size)
+            got.append(dest)
+            with print_lock:
+                print(f"{GREEN}[Lite] Ek version download karke rakh "
+                      f"liya: facebook-lite-{label}.apk{WHITE}")
+    total = len(_find_lite_apks())
+    with print_lock:
+        if total >= 2:
+            print(f"{GREEN}[Lite] Ab lite_apks me {total} versions "
+                  f"tayyar hain - har account par agli lagegi{WHITE}")
+        elif total == 1:
+            print(f"{YELLOW}[Lite] Abhi 1 hi version rakhi ja saki - "
+                  f"rotation ke liye aur versions is folder me khud "
+                  f"bhi daal sakte ho: {dest_dir}{WHITE}")
+        else:
+            print(f"{YELLOW}[Lite] Koi version auto nahi rakhi ja "
+                  f"saki (net/masla) - jo lagi hai usi par chalega. "
+                  f"Versions chahiye to APKs is folder me rakho: "
+                  f"{dest_dir}{WHITE}")
+
+
 def _install_lite_apk(adb, serial, apk_path):
     """Ek Lite version install karo (-d = bari version par chhoti
     version lagane ki ijazat, taake rotation har taraf chale)."""
@@ -1022,6 +1208,10 @@ def run_android_lite_mode(count, password_config, counter=None):
     with print_lock:
         print(f"{GREEN}[Lite] Facebook Lite tayyar hai "
               f"(version {_lite_version_name(adb, serial)}){WHITE}")
+
+    # Ek-dafa auto setup: folders/files khud bante hain, Lite ke
+    # versions khud rakh liye jate hain (2+ hon to kuch nahi hota)
+    _ensure_lite_setup(adb, serial)
 
     # Version rotation ke liye APKs (agar lite_apks folder maujood ho)
     lite_apks = _find_lite_apks()
