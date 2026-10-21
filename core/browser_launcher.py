@@ -21,9 +21,9 @@ def _check_cloakbrowser():
 def get_browser_choice():
     """Ask user which browser to use. Returns 'chromium', 'chrome', or 'cloak'."""
     print("\n" + "="*50)
-    print("Browser select karo:")
+    print("Select browser:")
     print("  [1] Chromium (default, fast)")
-    print("  [2] Real Chrome (zyada real lagta hai)")
+    print("  [2] Real Chrome (looks more real)")
     cloak_ok = _check_cloakbrowser()
     if cloak_ok:
         print("  [3] CloakBrowser (stealth, free tier)")
