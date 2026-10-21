@@ -1,12 +1,13 @@
 """
-TEST FILE - Mode 4 (Outlook) Proxy - Alag test, permanent nahi
+TEST FILE - Mode 4 (Outlook) Proxy - separate test file
 =============================================================
 Run:
     python test_outlook_proxy.py          # offline tests (parsing, rotation, format)
-    python test_outlook_proxy.py --live   # live test: proxies.txt wali har proxy se
-                                          # browser khol ke IP check karega
+    python test_outlook_proxy.py --live   # live test: real IP check through each proxies.txt proxy
+                                          # opens a browser and checks the IP
 
-Jab ye test PASS ho jaye, tabhi ye changes GitHub project me permanent honge.
+Only when this test passes do the changes become permanent
+in the GitHub project.
 """
 import os
 import sys
@@ -54,7 +55,7 @@ def test_parse():
 
 def test_playwright_format():
     print("\n== 2. Playwright format conversion ==")
-    # Fake proxy_data, jaisa build_proxy_data banata hai (network call nahi)
+    # Fake proxy_data, as build_proxy_data makes it (no network call)
     fake = {
         "proxy": {"http": "http://1.2.3.4:8080", "https": "http://1.2.3.4:8080",
                   "username": "user1", "password": "pass1"},
@@ -80,8 +81,8 @@ def test_file_and_rotation():
     print("\n== 3. proxies.txt loading + rotation ==")
     proxies = load_proxies_from_file(verbose=True)
     if not proxies:
-        print("  [SKIP] proxies.txt me koi real proxy nahi hai - dummy se rotation test")
-        # Dummy proxy_data list bana ke rotation test
+        print("  [SKIP] no real proxy in proxies.txt - rotation test with dummies")
+        # Build a dummy proxy_data list for the rotation test
         dummies = []
         for i in range(3):
             dummies.append({
@@ -112,7 +113,7 @@ def test_file_and_rotation():
 
 
 def test_live(proxies):
-    print("\n== 4. LIVE test - har proxy se asal IP check ==")
+    print("\n== 4. LIVE test - real IP check through each proxy ==")
     if not proxies:
         print("  [SKIP] proxies.txt me real proxy daalo, phir --live chalao")
         return
@@ -141,7 +142,7 @@ def test_live(proxies):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print(" Mode 4 Outlook Proxy - TEST (alag file, permanent nahi)")
+    print(" Mode 4 Outlook Proxy - TEST (separate file)")
     print("=" * 60)
     test_parse()
     test_playwright_format()
