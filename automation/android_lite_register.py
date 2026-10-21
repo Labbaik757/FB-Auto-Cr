@@ -666,8 +666,7 @@ def _download_lite_apk(url, dest):
 
 def _ensure_lite_setup(adb, serial):
     """Ek-dafa auto setup: (1) lite_apks folder khud banta hai,
-    (2) Number_List.txt na ho to khali template ban jata hai,
-    (3) output folder tayyar, (4) Lite ke versions: folder me 2 se
+    (2) output folder tayyar, (3) Lite ke versions: folder me 2 se
     kam hon to phone wali asal Lite nikal kar + downloads try karke
     rakh leta hai. 2+ versions pehle se hon to kuch nahi karta."""
     # 1) lite_apks folder
@@ -679,32 +678,12 @@ def _ensure_lite_setup(adb, serial):
                 dest_dir = d
         except Exception:
             continue
-    # 2) Number_List.txt template (ho to haath nahi lagta)
-    for base in (os.getcwd(),
-                 os.path.dirname(os.path.dirname(
-                     os.path.abspath(__file__)))):
-        _nl = os.path.join(base, "Number_List.txt")
-        if os.path.exists(_nl):
-            break
-        try:
-            with open(_nl, "w", encoding="utf-8") as fh:
-                fh.write("# Number_List - ek line me ek number\n"
-                         "# OTP auto chahiye to number ke sath us ka "
-                         "SMS link bhi do:\n"
-                         "# +15551234567|https://sms-link.example/xxxx\n"
-                         "# Sirf number bhi chalega (code haath se "
-                         "likhna hoga):\n"
-                         "# +15557654321\n")
-            with print_lock:
-                print(f"{CYAN}[Lite] Number_List.txt khud bana di hai "
-                      f"({_nl}) - numbers is me daal dena{WHITE}")
-            break
-        except Exception:
-            continue
-    # 3) Output folder
+    # 2) Output folder (repo folder ke andar - Browser Setup jesa)
     try:
-        from core.path_manager import get_output_dir
-        os.makedirs(get_output_dir(), exist_ok=True)
+        os.makedirs(os.path.join(
+            os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "output"),
+            exist_ok=True)
     except Exception:
         pass
     # 4) Versions - pehle se 2+ hon to bus
@@ -791,83 +770,19 @@ def _wait_device_back(adb, tries=30):
     return False
 
 
-_NUMBER_LIST_PATH = None
-
-
-def _load_number_list():
-    """PC wali Number_List.txt parho: har line 'number' ya
-    'number|sms_url' / 'number,url' hoti hai (PC wala hi usool).
-    [(number, sms_url ya None), ...] wapas milta hai. sms_url wale
-    numbers par OTP khud fetch hota hai - yehi PC ka system hai."""
-    global _NUMBER_LIST_PATH
-    candidates = []
-    for base in (os.getcwd(),
-                 os.path.dirname(os.path.dirname(
-                     os.path.abspath(__file__))),
-                 os.path.expanduser("~")):
-        candidates.append(os.path.join(base, "Number_List.txt"))
-    entries = []
-    for path in candidates:
-        try:
-            if not os.path.isfile(path):
-                continue
-            with open(path, "r", encoding="utf-8",
-                      errors="ignore") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    number, url = line, None
-                    for sep in ("|", ","):
-                        if sep in line:
-                            _p = line.split(sep, 1)
-                            number, url = _p[0].strip(), _p[1].strip()
-                            break
-                    if number:
-                        entries.append((number, url or None))
-            if entries:
-                _NUMBER_LIST_PATH = path
-                break
-        except Exception:
-            continue
-    return entries
-
-
-def _remove_number_entry(number, url=None):
-    """PC wala usool: jo number istemal ho jaye, wo Number_List.txt
-    se hat jata hai. Isi liye dobara run hamesha wahin se shuru
-    hota hai jahan pichli dafa ruka tha - na koi ginti ka sawal,
-    na number dobara istemal."""
-    path = _NUMBER_LIST_PATH
-    if not path or not os.path.isfile(path):
-        return
-    try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-            lines = fh.readlines()
-        out, removed = [], False
-        for line in lines:
-            s = line.strip()
-            if not removed and s and not s.startswith("#"):
-                n, u = s, None
-                for sep in ("|", ","):
-                    if sep in s:
-                        _p = s.split(sep, 1)
-                        n, u = _p[0].strip(), _p[1].strip()
-                        break
-                if n == number and (url is None or u == url):
-                    removed = True
-                    continue
-            out.append(line)
-        if removed:
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.writelines(out)
-            remaining = sum(1 for l in out
-                            if l.strip() and not l.strip().startswith("#"))
-            with print_lock:
-                print(f"{CYAN}[Lite] Ye number Number_List se hata "
-                      f"diya - {remaining} number bache{WHITE}")
-    except Exception:
-        pass
+def _parse_lite_number_entry(entry):
+    """Ek Number_List entry ko toro - Browser Setup ke asal
+    _parse_number_entry wala hi usool: 'number,url' ya
+    'number|url'; '#' wali ya khali line skip. (number, sms_url
+    ya None) wapas milta hai."""
+    entry = (entry or "").strip()
+    if entry.startswith("#") or not entry:
+        return None, None
+    for sep in [",", "|"]:
+        if sep in entry:
+            parts = entry.split(sep, 1)
+            return parts[0].strip(), parts[1].strip()
+    return entry, None
 
 
 # ----------------------------------------------------------------------
@@ -1301,30 +1216,12 @@ def _clear_android_proxy(adb, serial):
 # ----------------------------------------------------------------------
 # Mode entry point (called from main.py: Mode 2 -> Android Setup)
 # ----------------------------------------------------------------------
-def _load_saved_emails():
-    """Emails from the Outlook mode's saved accounts, if the file exists
-    (first field of each line, before the | separator)."""
-    try:
-        from core.path_manager import get_output_dir
-        path = os.path.join(get_output_dir(), "outlook_accounts.txt")
-        if not os.path.isfile(path):
-            return []
-        emails = []
-        with open(path, encoding="utf-8", errors="ignore") as fh:
-            for line in fh:
-                first_field = line.split("|")[0].strip()
-                if "@" in first_field:
-                    emails.append(first_field)
-        return emails
-    except Exception:
-        return []
-
-
-def run_android_lite_mode(password_config, counter=None):
-    """Facebook Lite app me accounts banao - Browser Setup wala
-    usool: koi ginti ka sawal nahi; Number_List / saved emails me
-    jitne hain utne hi accounts bante hain, list khatam = mode
-    khatam. Haath se likhne par khali Enter = khatam."""
+def run_android_lite_mode(password_config, counter=None,
+                        numbers=None):
+    """Facebook Lite app me accounts banao - numbers bilkul
+    Browser Setup wale raste se ate hain (process_file_input):
+    jitne numbers mile utne accounts, list khatam = mode khatam,
+    koi ginti ka sawal nahi."""
     with print_lock:
         print(f"\n{CYAN}[Lite] === FB Lite Android Mode (Facebook Lite "
               f"app only) ==={WHITE}")
@@ -1454,86 +1351,46 @@ def run_android_lite_mode(password_config, counter=None):
             _ans2 = "n"
         ip_refresh_manual = (_ans2 == "y")
 
-    # Contact choice: saved Outlook emails, typed emails, or phone numbers
-    saved_emails = _load_saved_emails()
-    number_entries = _load_number_list()
-    menu = []
-    if number_entries:
-        _with_url = sum(1 for _n, _u in number_entries if _u)
-        menu.append(("numbers",
-                     f"Mobile numbers - Number_List.txt se "
-                     f"({len(number_entries)} mile; {_with_url} ke sath "
-                     f"SMS link hai = un par OTP AUTO ayega)"))
-    if saved_emails:
-        menu.append(("saved",
-                     f"Email - saved Outlook accounts se "
-                     f"({len(saved_emails)} mile)"))
-    menu.append(("email", "Email - har account ke liye khud likhunga"))
-    menu.append(("phone", "Mobile number - har account ke liye khud "
-                          "likhunga (SMS link nahi, code haath se)"))
-    with print_lock:
-        for _mi, (_mk, _mlabel) in enumerate(menu, 1):
-            print(f" {GREEN}[{RED}0{_mi}{GREEN}] {_mlabel}{WHITE}")
-    _pick = input(f" {GREEN}[{RED}●{GREEN}] Select (1-{len(menu)}) [1] "
-                  f"{EKL} ").strip() or "1"
-    try:
-        src = menu[int(_pick) - 1][0]
-    except Exception:
-        src = menu[0][0]
-
-    # Browser Setup wala usool: koi "how many accounts" ka sawal
-    # nahi. File wale sources (Number_List / saved emails) me jitne
-    # hain utne hi accounts bante hain - tool khud pehle se aakhir
-    # tak jata hai aur list khatam hote hi ruk jata hai.
+    # Numbers: bilkul Browser Setup wala rasta - wohi asal
+    # function (core.number_manager.process_file_input) jo main.py
+    # Browser Setup aur HTTP mode dono ke liye chalata hai. Excel
+    # (.xlsx) mile to tool khud number column pehchan kar numbers
+    # nikalta hai aur khud Number_List.txt bana deta hai; warna
+    # Number_List.txt; Termux par storage folder, wahan bhi na
+    # mile to file ka path poochta hai. Koi alag menu nahi, koi
+    # haath se number/email likhna nahi - PC wala hi system.
+    from core.number_manager import process_file_input
+    raw_numbers = (numbers if numbers is not None
+                   else process_file_input())
+    if raw_numbers is None:
+        with print_lock:
+            print(f"{RED}[Lite] Numbers nahi mile - Android Mode "
+                  f"band{WHITE}")
+        return
     queue = []
-    if src == "numbers":
-        queue = [("phone", _n, _u) for (_n, _u) in number_entries]
-    elif src == "saved":
-        queue = [("email", _e) for _e in saved_emails]
+    for _entry in raw_numbers:
+        _num, _url = _parse_lite_number_entry(_entry)
+        if _num:
+            queue.append(("phone", _num, _url))
     total = len(queue)
+    if not total:
+        with print_lock:
+            print(f"{RED}[Lite] Koi number nahi mila - Android Mode "
+                  f"band{WHITE}")
+        return
 
     from core.counter import Counter
     if counter is None:
         counter = Counter()
 
     idx = 0
-    while True:
-        if queue:
-            if idx >= total:
-                with print_lock:
-                    print(f"{GREEN}[Lite] List khatam - kul {total} "
-                          f"the, sab ho gaye.{WHITE}")
-                break
-            contact = queue[idx]
-            idx += 1
-            with print_lock:
-                print(f"\n{CYAN}[Lite] --- Account {idx}/{total} ---{WHITE}")
-                if contact[0] == "phone":
-                    print(f"{CYAN}[Lite] Number: {contact[1]}"
-                          f"{' (OTP AUTO)' if contact[2] else ''}{WHITE}")
-        else:
-            # Haath se likhne wala source: har dafa poochta hai,
-            # khali Enter = mode khatam (rukna tumhare haath me)
-            _lbl = "email" if src == "email" else "mobile number"
-            address = input(f" {GREEN}[{RED}●{GREEN}] Is account ke "
-                            f"liye {_lbl} (khali = khatam) {EKL} ").strip()
-            if not address:
-                with print_lock:
-                    print(f"{GREEN}[Lite] Theek hai - mode khatam ho "
-                          f"raha hai.{WHITE}")
-                break
-            idx += 1
-            contact = (("email", address) if src == "email"
-                       else ("phone", address))
-            with print_lock:
-                print(f"\n{CYAN}[Lite] --- Account {idx} ---{WHITE}")
-            if idx > 1:
-                _reset_lite(adb, serial)
-                with print_lock:
-                    print(f"{CYAN}[Lite] Agla account 45-90 second "
-                          f"baad - jaldi jaldi accounts banana hi "
-                          f"sab se bara khatra hai{WHITE}")
-                _pause(45.0, 90.0)
+    while idx < total:
+        contact = queue[idx]
+        idx += 1
+        with print_lock:
+            print(f"\n{CYAN}[Lite] --- Account {idx}/{total} ---{WHITE}")
+            print(f"{CYAN}[Lite] Number: {contact[1]}"
+                  f"{' (OTP AUTO)' if contact[2] else ''}{WHITE}")
 
         identity = _gen_identity()
         password = _get_password(password_config)
@@ -1589,8 +1446,13 @@ def run_android_lite_mode(password_config, counter=None):
 
         if result["status"] == "success":
             try:
-                from core.path_manager import get_output_dir
-                output_dir = get_output_dir()
+                # Saved IDs repo folder ke output/ me - bilkul
+                # Browser Setup jesa: user usi folder ko kholta hai
+                # jo git pull se device me aya hota hai (PC par bhi,
+                # Termux par bhi wahi jagah)
+                output_dir = os.path.join(
+                    os.path.dirname(os.path.dirname(
+                        os.path.abspath(__file__))), "output")
                 os.makedirs(output_dir, exist_ok=True)
                 with open(os.path.join(output_dir,
                                        "android_lite_accounts.txt"),
@@ -1611,12 +1473,10 @@ def run_android_lite_mode(password_config, counter=None):
                 print(f"{RED}[Lite] Failed: "
                       f"{result.get('reason', result['status'])}{WHITE}")
 
-        # PC wala usool: istemal shuda number list se hat jata hai
-        if src == "numbers":
-            _remove_number_entry(
-                contact[1], contact[2] if len(contact) > 2 else None)
+        # Browser Setup wala usool: number istemal ke baad list
+        # se NAHI hataya jata (hatana sirf Mode 1 / HTTP me hai)
 
-        if queue and idx < total:
+        if idx < total:
             _reset_lite(adb, serial)
             with print_lock:
                 print(f"{CYAN}[Lite] Agla account 45-90 second baad - "
@@ -1624,6 +1484,9 @@ def run_android_lite_mode(password_config, counter=None):
                       f"khatra hai{WHITE}")
             _pause(45.0, 90.0)
 
+    with print_lock:
+        print(f"{GREEN}[Lite] List khatam - kul {total} the, sab "
+              f"ho gaye.{WHITE}")
     if proxy_state.get("via_settings"):
         _clear_android_proxy(adb, serial)
     with print_lock:
