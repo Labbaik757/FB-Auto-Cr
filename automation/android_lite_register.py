@@ -180,6 +180,17 @@ def _is_termux():
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
+def _clean_port(text):
+    """Port saaf karke do: user poora '192.168.1.5:35907' chipka de
+    to sirf aakhri number (35907) nikalta hai; sirf number ho to
+    wahi; khali/ghalat ho to khali string."""
+    text = (text or "").strip()
+    if ":" in text:
+        text = text.rsplit(":", 1)[-1]
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return digits
+
+
 def _connect_own_phone(adb):
     """Termux apne hi phone se Wireless ADB jorta hai - taake tool
     USI phone ka asal Facebook Lite app launch/control kar sake
@@ -203,10 +214,12 @@ def _connect_own_phone(adb):
         print(f"{WHITE}  2. Wireless debugging kholo > 'Pair device "
               f"with pairing code' dabao - wahan ek PORT aur 6-digit "
               f"CODE ayega{WHITE}")
-        print(f"{WHITE}  (Termux ko wahan side-by-side / split screen "
-              f"me rakho taake wo screen band na ho){WHITE}")
-    pair_port = input(f" {GREEN}[{RED}●{GREEN}] Pairing PORT {EKL} "
-                      ).strip()
+        print(f"{WHITE}  (Split screen ho to Termux sath rakho; na "
+              f"ho to PORT aur CODE note karke Home dabao aur Termux "
+              f"me ajayo - dialog peeche khula rehta hai, bas Back "
+              f"mat dabana){WHITE}")
+    pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] Pairing "
+                                  f"PORT {EKL} "))
     pair_code = input(f" {GREEN}[{RED}●{GREEN}] Pairing CODE (6 "
                       f"digits) {EKL} ").strip()
     if pair_port and pair_code:
@@ -215,18 +228,35 @@ def _connect_own_phone(adb):
                 [adb, "pair", f"localhost:{pair_port}"],
                 input=pair_code + "\n", capture_output=True, text=True,
                 timeout=40)
+            _out = ((res.stdout or "") + (res.stderr or "")).strip()
             with print_lock:
-                print(f"{GREEN}[Lite] Pairing: "
-                      f"{(res.stdout or res.stderr).strip()}{WHITE}")
+                print(f"{GREEN}[Lite] Pairing: {_out}{WHITE}")
+            if "CANNOT LINK EXECUTABLE" in _out:
+                with print_lock:
+                    print(f"{RED}[Lite] Termux ka adb hi nahi chal "
+                          f"raha - use ek package chahiye. Program "
+                          f"band karke pehle ye chalao:{WHITE}")
+                    print(f"{YELLOW}    pkg install libc++{WHITE}")
+                    print(f"{RED}[Lite] Phir dobara chalao - pairing "
+                          f"phir se ho jayegi.{WHITE}")
+                return False
+            if "Successfully paired" not in _out:
+                with print_lock:
+                    print(f"{RED}[Lite] Pairing nahi hui - PORT aur "
+                          f"CODE check karke dobara chalao. (PORT "
+                          f"dialog wala number hai, CODE 6-digit "
+                          f"wala - dono alag hain.){WHITE}")
+                return False
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Lite] Pairing error: {e}{WHITE}")
+            return False
     with print_lock:
         print(f"{WHITE}[Lite] Ab Wireless debugging wali MAIN screen "
               f"par jo bada PORT likha hai (IP address & Port ke neeche) "
               f"wo yahan likho:{WHITE}")
-    conn_port = input(f" {GREEN}[{RED}●{GREEN}] Connection PORT "
-                      f"{EKL} ").strip()
+    conn_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
+                                  f"Connection PORT {EKL} "))
     if conn_port:
         try:
             _adb(adb, None, "connect", f"localhost:{conn_port}",
