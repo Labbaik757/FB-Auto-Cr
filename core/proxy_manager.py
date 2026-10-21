@@ -1,3 +1,4 @@
+import os
 import time
 import itertools
 from concurrent.futures import ThreadPoolExecutor
@@ -72,9 +73,25 @@ def get_ip_info(proxies=None, retries=1):
     return None
 
 
+# Check if a proxy_dict / proxy_data is a Webshare rotating endpoint
+# Webshare rotating: server p.webshare.io + username ends with / contains "-rotate"
+# Example: http://myuser-rotate:mypass@p.webshare.io:80/
+# Server-side rotation - every new connection gets a new IP, no list needed.
+def is_rotating_proxy(proxy_dict_or_data):
+    if not proxy_dict_or_data:
+        return False
+    d = proxy_dict_or_data.get("proxy") if "proxy" in proxy_dict_or_data else proxy_dict_or_data
+    if not isinstance(d, dict):
+        return False
+    user = (d.get("username") or "")
+    server = (d.get("http") or d.get("https") or "")
+    return "-rotate" in user and "webshare" in server
+
+
 # Build complete proxy data dict with locale, timezone, and language info
 def build_proxy_data(proxy_dict):
     req_proxies = None
+    rotating = is_rotating_proxy(proxy_dict)
     if proxy_dict:
         username = proxy_dict.get("username")
         password = proxy_dict.get("password")
@@ -89,10 +106,17 @@ def build_proxy_data(proxy_dict):
         else:
             req_proxies = proxy_dict
 
-    info = get_ip_info(req_proxies)
-    if info is None:
-        print(f"{RED} Warning: Could not determine location for proxy. Using default US settings.")
+    if rotating:
+        # Rotating endpoint: a geo-check here would burn one rotation and the
+        # IP it returns is NOT the IP the browser session will get next.
+        # So skip ip-api, use US fallback, and mark rotating=True.
+        # Real country/timezone will differ per session (Webshare pool).
         info = FALLBACK_IP_INFO
+    else:
+        info = get_ip_info(req_proxies)
+        if info is None:
+            print(f"{RED} Warning: Could not determine location for proxy. Using default US settings.")
+            info = FALLBACK_IP_INFO
     cc = info["countryCode"]
     return {
         "proxy": proxy_dict,
@@ -101,7 +125,8 @@ def build_proxy_data(proxy_dict):
         "locale": get_locale(cc),
         "timezone": get_timezone(cc),
         "language": get_language(cc),
-        "ip_timezone": info["timezone"]
+        "ip_timezone": info["timezone"],
+        "rotating": rotating,
     }
 
 
@@ -196,6 +221,20 @@ def get_proxy_list(config_state=None, render_callback=None):
             with ThreadPoolExecutor(max_workers=min(len(parsed_proxies), 5)) as executor:
                 proxy_list.extend(executor.map(build_proxy_data, parsed_proxies))
 
+    # proxies.txt auto-load (highest priority after settings) - if file has
+    # proxies, use them and skip the manual prompt entirely.
+    if not proxy_list:
+        try:
+            file_proxies = load_proxies_from_file(verbose=True)
+            if file_proxies:
+                proxy_list.extend(file_proxies)
+                if config_state is not None:
+                    countries = set(p['country'] for p in proxy_list)
+                    config_state[config_key] = f"{len(proxy_list)} Proxies ({len(countries)} Countries) (proxies.txt)"
+                return proxy_list
+        except Exception:
+            pass
+
     if not ask_proxy:
         if config_state is not None:
             config_state[config_key] = _format_proxy_config_label(proxy_list, "Settings")
@@ -243,6 +282,93 @@ def get_no_proxy_data():
         "language": get_language(cc),
         "ip_timezone": info["timezone"]
     }
+
+
+# --- proxies.txt support (Mode 4 / Outlook + all modes) ---
+
+def _proxy_file_candidates(filepath=None):
+    cands = []
+    if filepath:
+        cands.append(filepath)
+    cands.append(os.path.join(os.path.abspath("."), "proxies.txt"))
+    try:
+        from core.path_manager import get_base_storage_dir
+        cands.append(os.path.join(get_base_storage_dir(), "proxies.txt"))
+    except Exception:
+        pass
+    # de-dupe, keep order
+    seen = set()
+    out = []
+    for c in cands:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def load_proxies_from_file(filepath=None, verbose=True):
+    """Load proxies from proxies.txt (one per line, # = comment).
+    Returns list of proxy_data dicts (same shape as get_proxy_list).
+    Returns [] if file missing/empty. No 40-limit here - file can hold more,
+    rotation will cycle through all of them.
+    """
+    target = None
+    lines = []
+    for cand in _proxy_file_candidates(filepath):
+        if os.path.exists(cand):
+            try:
+                with open(cand, encoding="utf-8") as f:
+                    raw = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
+                if raw:
+                    target = cand
+                    lines = raw
+                    break
+                elif verbose:
+                    # file exists but empty - keep looking? No, report once
+                    pass
+            except Exception:
+                continue
+    if not lines:
+        return []
+    if verbose:
+        print(f"{GREEN} Loading {len(lines)} proxies from {target}")
+    parsed_list = []
+    for line in lines:
+        parsed = parse_proxy(line)
+        if parsed:
+            parsed_list.append(parsed)
+        elif verbose:
+            print(f"{RED} Warning: Skipping invalid proxy in file: {line}")
+    if not parsed_list:
+        return []
+    with ThreadPoolExecutor(max_workers=min(len(parsed_list), 5)) as executor:
+        return list(executor.map(build_proxy_data, parsed_list))
+
+
+def format_proxy_for_playwright(proxy_data):
+    """Convert proxy_data (from build_proxy_data / get_proxy_list) into
+    Playwright format: {"server": "http://ip:port", "username": ..., "password": ...}
+    Returns None for direct connection.
+    Playwright does NOT support socks5 with auth - it will pass through and
+    Playwright/Chromium will reject it; http/https proxies are recommended.
+    """
+    if not proxy_data:
+        return None
+    proxy_dict = proxy_data.get("proxy")
+    if not proxy_dict:
+        return None
+    if isinstance(proxy_dict, dict):
+        server = proxy_dict.get("http") or proxy_dict.get("https") or ""
+        if not server:
+            return None
+        result = {"server": server}
+        if proxy_dict.get("username"):
+            result["username"] = proxy_dict["username"]
+        if proxy_dict.get("password"):
+            result["password"] = proxy_dict["password"]
+        return result
+    # plain string fallback
+    return {"server": str(proxy_dict)}
 
 
 # Convert proxy_data dict into requests-compatible proxy format with auth
