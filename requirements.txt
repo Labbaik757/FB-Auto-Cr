@@ -2,3 +2,36 @@ curl_cffi
 faker
 openpyxl
 requests
+playwright
+playwright-stealth==1.0.6
+google-generativeai
+# cloakbrowser
+
+# --- Upar wali 3 linein 2026-10-21 ko add huin: ye packages code
+#     istemal karta tha lekin requirements me thay hi nahi ---
+# playwright          : Mode 2 (Browser Setup), Mode 3, Mode 4 ke liye
+# playwright-stealth  : Mode 4 ki stealth ke liye. Version 1.0.6 is
+#                       liye bandha hai ke code 'stealth_sync' wala
+#                       purana API istemal karta hai - naya version
+#                       lagane se wo import fail ho jata hai.
+# google-generativeai : Mode 3 me Gemini se review variations ke liye
+# cloakbrowser        : OPTIONAL hai (upar comment me hai) - sirf tab
+#                       uncomment karna jab CloakBrowser wala browser
+#                       type select karna ho. Baqi har cheez is ke
+#                       baghair chalti hai.
+
+# ================= TERMUX (Mobile) SETUP =================
+# requirements.txt sirf Python packages lagata hai. Termux me tool
+# chalane ke liye pehle ye SYSTEM packages lagao (ek dafa hi):
+#     pkg update && pkg install python git android-tools chromium
+#   - android-tools se 'adb' milta hai: Mode 2 ke Android Setup
+#     (Facebook Lite) ke liye lazmi hai.
+#   - chromium: Playwright wale modes ke liye browser. Termux par
+#     'playwright install' kaam nahi karta, system chromium hi
+#     istemal hota hai.
+# Phir:
+#     pip install -r requirements.txt
+#     python main.py
+# Note: curl_cffi Termux par kabhi source se build mangta hai.
+# Us waqt pehle ye laga lena:  pkg install rust binutils libcurl
+# ==========================================================
