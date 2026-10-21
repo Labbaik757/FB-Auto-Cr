@@ -1,0 +1,28 @@
+# ============================================================
+# TERMUX (Android phone) ke liye requirements
+# ------------------------------------------------------------
+# PC wali requirements.txt Termux par MAT chalana: us me
+# 'playwright' hai, aur playwright ka Android/Termux ke liye
+# koi package hi nahi banta - pip wahan error de kar POORI
+# install rok deta hai (baqi packages bhi nahi lagte).
+# Termux par sirf ye file istemal karo:
+#
+#     pkg update && pkg install python git android-tools
+#     pip install -r requirements-termux.txt
+#     python main.py
+#
+# Is file se phone par ye modes chalenge:
+#   Mode 1 (HTTP)            - curl_cffi chahiye (neeche hai)
+#   Mode 2 > Android Setup   - Facebook Lite wala, isi phone par
+# Browser wale modes (Mode 2 ka Browser Setup, Mode 3, Mode 4)
+# playwright mangte hain jo Termux par install nahi hota -
+# un ke liye PC behtar hai.
+#
+# Note: curl_cffi Termux par kabhi source se build mangta hai.
+# Fail ho to pehle ye lagao, phir pip wali command dobara:
+#     pkg install rust binutils libcurl
+# ============================================================
+curl_cffi
+faker
+openpyxl
+requests
