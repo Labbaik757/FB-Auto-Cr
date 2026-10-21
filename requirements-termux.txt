@@ -7,8 +7,10 @@
 # install rok deta hai (baqi packages bhi nahi lagte).
 # Termux par sirf ye file istemal karo:
 #
-#     pkg update && pkg install python git android-tools
+#     pkg update && pkg install python git android-tools libc++
 #     pip install -r requirements-termux.txt
+#   - libc++ lazmi hai: us ke baghair Termux ka adb chalta hi
+#     nahi ("CANNOT LINK EXECUTABLE" wala error ata hai).
 #     python main.py
 #
 # Is file se phone par ye modes chalenge:
