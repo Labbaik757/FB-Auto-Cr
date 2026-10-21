@@ -84,6 +84,30 @@ def run_create():
     config_state["mode"] = "Browser (Playwright)" if browser_mode else "HTTP"
 
     if browser_mode:
+        # Added 2026-10-21: FB Auto Create ke andar setup ka intekhab.
+        # 1 = purana Browser setup (neeche wala code, bilkul waisa hi).
+        # 2 = Android setup (Facebook Lite app) - alag module, alag flow;
+        #     ye select karne par purana flow yahin ruk jata hai (return).
+        print(f" {GREEN}[{RED}01{GREEN}] Browser Setup {WHITE}(Purana setup - Playwright, PC browser)")
+        print(f" {GREEN}[{RED}02{GREEN}] Android Setup {WHITE}(Facebook Lite app - emulator/phone)")
+        print(f"{LINE}")
+        _setup_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Setup (1/2) [1] {EKL} ").strip()
+        if _setup_choice == "2":
+            from automation.android_lite_register import run_android_lite_mode
+            config_state["mode"] = "FB Auto Create (Android Lite)"
+            password_config = select_password_config(config_state, lambda: render_config(config_state))
+            render_config(config_state)
+            try:
+                _count = int(input(f" {GREEN}[{RED}●{GREEN}] How many accounts? {WHITE}").strip())
+            except Exception:
+                _count = 1
+            render_config(config_state)
+            input(f"\n {WHITE}Press Enter to start Facebook Lite (Android) automation... ")
+            logo()
+            counter = Counter()
+            run_android_lite_mode(_count, password_config, counter)
+            input(f"\n {WHITE}Press Enter to exit... ")
+            return
         # Browser mode: simplified flow (no device/server/proxy needed)
         from automation.browser_register import run_browser_mode
         password_config = select_password_config(config_state, lambda: render_config(config_state))
