@@ -49,10 +49,15 @@ def run_create():
     print(f"{LINE}")
     mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2/3/4) [1] {EKL} ").strip()
     if mode_choice == "4":
-        # Outlook Email Creation mode
+        # Outlook Email Creation mode - WITH proxy support
+        # Proxy source priority: proxies.txt (auto) > setting.json > manual prompt
+        # Each Outlook account gets the next proxy in rotation (per-context).
         from automation.outlook_register import run_outlook_mode
         config_state["mode"] = "Outlook Email"
         password_config = select_password_config(config_state, lambda: render_config(config_state))
+        # Proxy load (checks proxies.txt first inside get_proxy_list)
+        proxy_list = get_proxy_list(config_state, lambda: render_config(config_state))
+        proxy_cycle = create_proxy_cycle(proxy_list)
         render_config(config_state)
         try:
             _count = int(input(f" {GREEN}[{RED}●{GREEN}] How many Outlook accounts? {WHITE}").strip())
@@ -62,7 +67,7 @@ def run_create():
         input(f"\n {WHITE}Press Enter to start Outlook automation... ")
         logo()
         counter = Counter()
-        run_outlook_mode(_count, password_config, counter)
+        run_outlook_mode(_count, password_config, counter, proxy_list=proxy_list, proxy_cycle=proxy_cycle)
         input(f"\n {WHITE}Press Enter to exit... ")
         return
 

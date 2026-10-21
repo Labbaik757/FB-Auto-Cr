@@ -5,3 +5,4 @@ output/
 .vscode/
 .idea/
 gemini_api_key.txt
+proxies.txt
