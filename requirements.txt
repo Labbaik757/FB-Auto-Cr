@@ -23,15 +23,24 @@ google-generativeai
 # ================= TERMUX (Mobile) SETUP =================
 # requirements.txt sirf Python packages lagata hai. Termux me tool
 # chalane ke liye pehle ye SYSTEM packages lagao (ek dafa hi):
-#     pkg update && pkg install python git android-tools chromium
+#     pkg update && pkg install python git android-tools
 #   - android-tools se 'adb' milta hai: Mode 2 ke Android Setup
-#     (Facebook Lite) ke liye lazmi hai.
-#   - chromium: Playwright wale modes ke liye browser. Termux par
-#     'playwright install' kaam nahi karta, system chromium hi
-#     istemal hota hai.
+#     (Facebook Lite) ke liye lazmi hai - Termux usi phone ke asal
+#     Lite app ko Wireless ADB se launch/control karta hai.
+#   - Chromium Termux ke MAIN repo me NAHI hota. Browser wale modes
+#     (Mode 2 ka Browser Setup, Mode 3, Mode 4) ke liye pehle
+#     'pkg install tur-repo' phir 'pkg install chromium' karna
+#     hota hai. Mode 1 aur Android Setup ko chromium chahiye hi
+#     nahi. Termux par 'playwright install' bhi kaam nahi karta,
+#     system chromium hi istemal hota hai.
 # Phir:
-#     pip install -r requirements.txt
+#     pip install -r requirements-termux.txt
 #     python main.py
+#   - Termux par IS file (requirements.txt) wali pip command MAT
+#     chalana: playwright ka Termux/Android package nahi banta,
+#     pip error de kar poori install rok deta hai. Termux ke liye
+#     alag file 'requirements-termux.txt' hai (Mode 1 aur Mode 2
+#     ka Android Setup usi se chalta hai).
 # Note: curl_cffi Termux par kabhi source se build mangta hai.
 # Us waqt pehle ye laga lena:  pkg install rust binutils libcurl
 # ==========================================================
