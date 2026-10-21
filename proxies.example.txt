@@ -1,0 +1,21 @@
+# Proxies for FB-Auto-Cr - one proxy per line
+# === WEBSHARE ROTATING (recommended for Mode 4) ===
+# Sirf EK line kaafi hai, list ki zaroorat nahi - Webshare khud rotate karega:
+# http://YOURUSER-rotate:YOURPASS@p.webshare.io:80
+# (YOURUSER / YOURPASS apne Webshare dashboard > Proxy > Rotating Proxy se lo)
+#
+# === YA phir normal proxy list ===
+# Apni proxy list yahan paste karo, ek line me ek proxy
+# Formats:
+#   ip:port
+#   ip:port:username:password
+#   http://ip:port
+#   http://username:password@ip:port
+#   socks5://ip:port
+#   socks5://username:password@ip:port
+# Note: Outlook Mode 4 ke liye http/https proxy best hai.
+#       Playwright socks5 with password support nahi karta.
+# Example (dummy, delete karke apni lagana):
+# 192.168.1.1:8080
+# 192.168.1.1:8080:myuser:mypass
+# http://myuser:mypass@192.168.1.1:8080
