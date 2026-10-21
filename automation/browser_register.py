@@ -727,6 +727,13 @@ def run_browser_mode(numbers, password_config, counter=None):
         from core.browser_launcher import get_browser_choice, launch_browser
         _browser_type = get_browser_choice()
         browser, _is_cloak = launch_browser(p, _browser_type, headless=False)
+        # Added 2026-10-21: permanent proxies.txt support - auto-loads and
+        # rotates one proxy per account context; no file = direct (as before)
+        try:
+            from core.proxy_manager import apply_proxies_to_browser
+            apply_proxies_to_browser(browser, "Browser")
+        except Exception:
+            pass
 
         try:
             for idx, entry in enumerate(numbers, 1):
