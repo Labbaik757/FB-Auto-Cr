@@ -135,6 +135,16 @@ def _find_adb():
                      "adb.exe"),
         os.path.join(os.environ.get("ANDROID_HOME", ""), "platform-tools",
                      "adb"),
+        os.path.join(os.environ.get("ANDROID_SDK_ROOT", ""),
+                     "platform-tools", "adb.exe"),
+        os.path.join(os.environ.get("ANDROID_SDK_ROOT", ""),
+                     "platform-tools", "adb"),
+        # Termux (phone par hi): android-tools wala adb
+        os.path.join(os.environ.get("PREFIX", ""), "bin", "adb"),
+        "/data/data/com.termux/files/usr/bin/adb",
+        # Tool ke sath rakhi hui platform-tools
+        os.path.join(os.getcwd(), "platform-tools", "adb.exe"),
+        os.path.join(os.getcwd(), "platform-tools", "adb"),
     ]
     for path in candidates:
         if path and os.path.isfile(path):
@@ -681,11 +691,15 @@ def _wait_device_back(adb, tries=30):
     return False
 
 
+_NUMBER_LIST_PATH = None
+
+
 def _load_number_list():
     """PC wali Number_List.txt parho: har line 'number' ya
     'number|sms_url' / 'number,url' hoti hai (PC wala hi usool).
     [(number, sms_url ya None), ...] wapas milta hai. sms_url wale
     numbers par OTP khud fetch hota hai - yehi PC ka system hai."""
+    global _NUMBER_LIST_PATH
     candidates = []
     for base in (os.getcwd(),
                  os.path.dirname(os.path.dirname(
@@ -712,10 +726,48 @@ def _load_number_list():
                     if number:
                         entries.append((number, url or None))
             if entries:
+                _NUMBER_LIST_PATH = path
                 break
         except Exception:
             continue
     return entries
+
+
+def _remove_number_entry(number, url=None):
+    """PC wala usool: jo number istemal ho jaye, wo Number_List.txt
+    se hat jata hai. Isi liye dobara run hamesha wahin se shuru
+    hota hai jahan pichli dafa ruka tha - na koi ginti ka sawal,
+    na number dobara istemal."""
+    path = _NUMBER_LIST_PATH
+    if not path or not os.path.isfile(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+            lines = fh.readlines()
+        out, removed = [], False
+        for line in lines:
+            s = line.strip()
+            if not removed and s and not s.startswith("#"):
+                n, u = s, None
+                for sep in ("|", ","):
+                    if sep in s:
+                        _p = s.split(sep, 1)
+                        n, u = _p[0].strip(), _p[1].strip()
+                        break
+                if n == number and (url is None or u == url):
+                    removed = True
+                    continue
+            out.append(line)
+        if removed:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.writelines(out)
+            remaining = sum(1 for l in out
+                            if l.strip() and not l.strip().startswith("#"))
+            with print_lock:
+                print(f"{CYAN}[Lite] Ye number Number_List se hata "
+                      f"diya - {remaining} number bache{WHITE}")
+    except Exception:
+        pass
 
 
 # ----------------------------------------------------------------------
@@ -1133,9 +1185,11 @@ def _load_saved_emails():
         return []
 
 
-def run_android_lite_mode(count, password_config, counter=None):
-    """Create `count` Facebook accounts inside the Facebook Lite app
-    on one connected Android emulator/device (ADB)."""
+def run_android_lite_mode(password_config, counter=None):
+    """Facebook Lite app me accounts banao - Browser Setup wala
+    usool: koi ginti ka sawal nahi; Number_List / saved emails me
+    jitne hain utne hi accounts bante hain, list khatam = mode
+    khatam. Haath se likhne par khali Enter = khatam."""
     with print_lock:
         print(f"\n{CYAN}[Lite] === FB Lite Android Mode (Facebook Lite "
               f"app only) ==={WHITE}")
@@ -1143,10 +1197,15 @@ def run_android_lite_mode(count, password_config, counter=None):
     adb = _find_adb()
     if not adb:
         with print_lock:
-            print(f"{RED}[Lite] adb nahi mila! Android SDK platform-tools "
-                  f"install karo (ya apne Android Emulator Launcher se ek "
-                  f"device banao - usi SDK me adb hota hai), phir dobara "
-                  f"try karo.{WHITE}")
+            if _is_termux():
+                print(f"{RED}[Lite] adb nahi mila! Termux me pehle ye "
+                      f"chalao: pkg install android-tools - phir dobara "
+                      f"try karo.{WHITE}")
+            else:
+                print(f"{RED}[Lite] adb nahi mila! Android SDK "
+                      f"platform-tools install karo (ya apne Android "
+                      f"Emulator Launcher se ek device banao - usi SDK "
+                      f"me adb hota hai), phir dobara try karo.{WHITE}")
         return
 
     devices = _list_devices(adb)
@@ -1287,51 +1346,59 @@ def run_android_lite_mode(count, password_config, counter=None):
     except Exception:
         src = menu[0][0]
 
-    email_iter = iter(saved_emails) if src == "saved" else None
-    number_iter = iter(number_entries) if src == "numbers" else None
+    # Browser Setup wala usool: koi "how many accounts" ka sawal
+    # nahi. File wale sources (Number_List / saved emails) me jitne
+    # hain utne hi accounts bante hain - tool khud pehle se aakhir
+    # tak jata hai aur list khatam hote hi ruk jata hai.
+    queue = []
+    if src == "numbers":
+        queue = [("phone", _n, _u) for (_n, _u) in number_entries]
+    elif src == "saved":
+        queue = [("email", _e) for _e in saved_emails]
+    total = len(queue)
 
     from core.counter import Counter
     if counter is None:
         counter = Counter()
 
-    for idx in range(1, count + 1):
-        with print_lock:
-            print(f"\n{CYAN}[Lite] --- Account {idx}/{count} ---{WHITE}")
-        if email_iter is not None:
-            address = next(email_iter, None)
-            if not address:
+    idx = 0
+    while True:
+        if queue:
+            if idx >= total:
                 with print_lock:
-                    print(f"{YELLOW}[Lite] Saved emails khatam - mode "
-                          f"ruk raha hai.{WHITE}")
+                    print(f"{GREEN}[Lite] List khatam - kul {total} "
+                          f"the, sab ho gaye.{WHITE}")
                 break
-            contact = ("email", address)
-        elif number_iter is not None:
-            _entry = next(number_iter, None)
-            if not _entry:
-                with print_lock:
-                    print(f"{YELLOW}[Lite] Number_List khatam - mode "
-                          f"ruk raha hai.{WHITE}")
-                break
-            contact = ("phone", _entry[0], _entry[1])
+            contact = queue[idx]
+            idx += 1
             with print_lock:
-                print(f"{CYAN}[Lite] Number: {_entry[0]}"
-                      f"{' (OTP AUTO)' if _entry[1] else ''}{WHITE}")
-        elif src == "email":
-            address = input(f" {GREEN}[{RED}●{GREEN}] Is account ke liye "
-                            f"email {EKL} ").strip()
+                print(f"\n{CYAN}[Lite] --- Account {idx}/{total} ---{WHITE}")
+                if contact[0] == "phone":
+                    print(f"{CYAN}[Lite] Number: {contact[1]}"
+                          f"{' (OTP AUTO)' if contact[2] else ''}{WHITE}")
+        else:
+            # Haath se likhne wala source: har dafa poochta hai,
+            # khali Enter = mode khatam (rukna tumhare haath me)
+            _lbl = "email" if src == "email" else "mobile number"
+            address = input(f" {GREEN}[{RED}●{GREEN}] Is account ke "
+                            f"liye {_lbl} (khali = khatam) {EKL} ").strip()
             if not address:
                 with print_lock:
-                    print(f"{YELLOW}[Lite] Email khali - skip{WHITE}")
-                continue
-            contact = ("email", address)
-        else:
-            number = input(f" {GREEN}[{RED}●{GREEN}] Is account ke liye "
-                           f"mobile number {EKL} ").strip()
-            if not number:
+                    print(f"{GREEN}[Lite] Theek hai - mode khatam ho "
+                          f"raha hai.{WHITE}")
+                break
+            idx += 1
+            contact = (("email", address) if src == "email"
+                       else ("phone", address))
+            with print_lock:
+                print(f"\n{CYAN}[Lite] --- Account {idx} ---{WHITE}")
+            if idx > 1:
+                _reset_lite(adb, serial)
                 with print_lock:
-                    print(f"{YELLOW}[Lite] Number khali - skip{WHITE}")
-                continue
-            contact = ("phone", number)
+                    print(f"{CYAN}[Lite] Agla account 45-90 second "
+                          f"baad - jaldi jaldi accounts banana hi "
+                          f"sab se bara khatra hai{WHITE}")
+                _pause(45.0, 90.0)
 
         identity = _gen_identity()
         password = _get_password(password_config)
@@ -1409,7 +1476,12 @@ def run_android_lite_mode(count, password_config, counter=None):
                 print(f"{RED}[Lite] Failed: "
                       f"{result.get('reason', result['status'])}{WHITE}")
 
-        if idx < count:
+        # PC wala usool: istemal shuda number list se hat jata hai
+        if src == "numbers":
+            _remove_number_entry(
+                contact[1], contact[2] if len(contact) > 2 else None)
+
+        if queue and idx < total:
             _reset_lite(adb, serial)
             with print_lock:
                 print(f"{CYAN}[Lite] Agla account 45-90 second baad - "
