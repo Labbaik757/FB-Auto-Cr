@@ -208,18 +208,26 @@ def _connect_own_phone(adb):
         print(f"\n{YELLOW}[Lite] Ye Termux hai - apne hi phone ke Lite "
               f"app ko launch karne ke liye Wireless ADB jorna hai "
               f"(sirf pehli dafa pairing hoti hai).{WHITE}")
-        print(f"{WHITE}[Lite] Phone me ye karo:{WHITE}")
+        print(f"{WHITE}[Lite] Phone me ye karo (SIRF EK dafa jana "
+              f"hai - teeno cheezein note karke ajao, tool sab ek "
+              f"sath pooch lega):{WHITE}")
         print(f"{WHITE}  1. Settings > Developer options > Wireless "
               f"debugging ON karo (Wi-Fi on rakho){WHITE}")
-        print(f"{WHITE}  2. Wireless debugging kholo > 'Pair device "
-              f"with pairing code' dabao - wahan ek PORT aur 6-digit "
-              f"CODE ayega{WHITE}")
-        print(f"{WHITE}  (Split screen ho to Termux sath rakho; na "
-              f"ho to PORT aur CODE note karke Home dabao aur Termux "
-              f"me ajayo - dialog peeche khula rehta hai, bas Back "
-              f"mat dabana){WHITE}")
+        print(f"{WHITE}  2. Wireless debugging ke andar jao - MAIN "
+              f"screen par 'IP address & Port' ke neeche jo number "
+              f"hai wo CONNECTION PORT hai, wo note karo{WHITE}")
+        print(f"{WHITE}  3. Phir 'Pair device with pairing code' "
+              f"dabao - dialog me PAIRING PORT aur 6-digit CODE hai, "
+              f"wo bhi note karo{WHITE}")
+        print(f"{WHITE}  4. Home dabakar Termux me ajao (Back mat "
+              f"dabana - dialog band ho jata hai, lekin note ki hui "
+              f"cheezein kaam karengi){WHITE}")
+    conn_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
+                                  f"Connection PORT (step 2 wala - "
+                                  f"khali choro to tool khud dhund "
+                                  f"lega) {EKL} "))
     pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] Pairing "
-                                  f"PORT {EKL} "))
+                                  f"PORT (dialog wala) {EKL} "))
     pair_code = input(f" {GREEN}[{RED}●{GREEN}] Pairing CODE (6 "
                       f"digits) {EKL} ").strip()
     if pair_port and pair_code:
@@ -251,16 +259,28 @@ def _connect_own_phone(adb):
             with print_lock:
                 print(f"{RED}[Lite] Pairing error: {e}{WHITE}")
             return False
-    with print_lock:
-        print(f"{WHITE}[Lite] Ab Wireless debugging wali MAIN screen "
-              f"par jo bada PORT likha hai (IP address & Port ke neeche) "
-              f"wo yahan likho:{WHITE}")
-    conn_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
-                                  f"Connection PORT {EKL} "))
+    # Judna: pehle diya gaya connection port, na mile to phone ki
+    # wireless service khud dhundo (mDNS) - user ko dobara Settings
+    # me jana hi na pare
     if conn_port:
         try:
             _adb(adb, None, "connect", f"localhost:{conn_port}",
                  timeout=20)
+        except Exception:
+            pass
+    if not _list_devices(adb):
+        try:
+            res = subprocess.run([adb, "mdns", "services"],
+                                 capture_output=True, text=True,
+                                 timeout=25)
+            _m = re.search(r"_adb-tls-connect\._tcp\s+"
+                           r"(\d+\.\d+\.\d+\.\d+:\d+)",
+                           (res.stdout or "") + (res.stderr or ""))
+            if _m:
+                with print_lock:
+                    print(f"{CYAN}[Lite] Connection port khud mil "
+                          f"gaya: {_m.group(1)}{WHITE}")
+                _adb(adb, None, "connect", _m.group(1), timeout=20)
         except Exception:
             pass
     return bool(_list_devices(adb))
