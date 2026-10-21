@@ -1,32 +1,14 @@
-"""
-FB Auto Create -> Android Setup: Facebook account creation inside
-the Facebook Lite ANDROID app (package com.facebook.lite). Selected
-from inside Mode 2 (FB Auto Create) in main.py - the mode's original
-Browser Setup stays exactly as it was; this is its separate part.
+"""FB Auto Create -> Android Setup: Facebook account creation inside
+the Facebook Lite ANDROID app (package com.facebook.lite), selected
+from Mode 2 (FB Auto Create) in main.py. The original Browser Setup
+is untouched; this is a separate, self-contained module.
 
-Just like the Browser Setup launches a browser on the PC, this
-launches the REAL Lite app on the phone itself:
-- On a PC: an emulator or a USB-connected phone (over ADB).
-- In Termux (on the phone): the SAME phone - Termux connects to its
-  own phone over Wireless ADB (one-time pairing from Developer
-  options > Wireless debugging), then launches and drives the Lite
-  app installed on that phone. No emulator, no second device.
+Drives the real Lite app over ADB + uiautomator UI dumps - on a PC
+(emulator or USB phone) or in Termux on the phone itself (Wireless
+ADB). No extra pip packages; Faker identities like the other modes.
 
-This is a NEW, self-contained module (added 2026-10-21). It does not
-import, copy, or modify the Playwright browser code in any way - it
-drives the Lite app purely with ADB commands + Android's built-in
-uiautomator UI dumps, so it needs NO extra pip packages (Faker is
-already a project dependency and is used for identities, like the
-other modes).
-
-Works ONLY with Facebook Lite - the regular Facebook app and the
-mobile website are intentionally not supported here.
-
-Flow per account:
-    launch Lite (fresh app data) -> Create new account -> Name ->
-    Date of birth -> Gender -> Email or Mobile number -> Password ->
-    Sign Up -> (confirmation code / dialogs handled with the user) ->
-    account saved to android_lite_accounts.txt
+Facebook Lite only - the regular Facebook app and the mobile site
+are not supported here.
 """
 
 import os
@@ -52,11 +34,9 @@ LITE_PACKAGE = "com.facebook.lite"
 # If Lite changes its wording in a future version, THIS is the only
 # block that needs updating - everything below reads from here.
 # ----------------------------------------------------------------------
-# Facebook Lite ke DIFFERENT versions mukhtalif lafz istemal karte hain
-# (kabhi "Create New Account", kabhi "Create new account", kabhi steps ki
-# tartib bhi alag). Is liye har step ke saare mashhoor variants yahan hain,
-# aur neeche ka flow tartib par nahi, screen par maujood khano par chalta
-# hai - taake jis version par account banna mumkin ho, ban jaye.
+# Facebook Lite versions differ in wording and step order, so all
+# known variants live here and the flow keys off what is actually
+# on screen, not a fixed step order.
 TEXTS = {
     "create_account": ["Create new account", "Create New Account",
                        "Create account", "Create Account", "Join Facebook",
@@ -139,10 +119,10 @@ def _find_adb():
                      "platform-tools", "adb.exe"),
         os.path.join(os.environ.get("ANDROID_SDK_ROOT", ""),
                      "platform-tools", "adb"),
-        # Termux (phone par hi): android-tools wala adb
+        # Termux: android-tools adb
         os.path.join(os.environ.get("PREFIX", ""), "bin", "adb"),
         "/data/data/com.termux/files/usr/bin/adb",
-        # Tool ke sath rakhi hui platform-tools
+        # Bundled platform-tools next to the tool
         os.path.join(os.getcwd(), "platform-tools", "adb.exe"),
         os.path.join(os.getcwd(), "platform-tools", "adb"),
     ]
@@ -176,14 +156,14 @@ def _list_devices(adb):
 
 
 def _is_termux():
-    """Kya ye code Termux (Android phone ke andar) chal raha hai?"""
+    """True when running inside Termux (on the Android phone)."""
     return "com.termux" in os.environ.get("PREFIX", "")
 
 
 def _clean_port(text):
-    """Port saaf karke do: user poora '192.168.1.5:35907' chipka de
-    to sirf aakhri number (35907) nikalta hai; sirf number ho to
-    wahi; khali/ghalat ho to khali string."""
+    """Normalize a port entry: a pasted '192.168.1.5:35907' yields
+    just 35907; a plain number passes through; junk yields ''.
+    """
     text = (text or "").strip()
     if ":" in text:
         text = text.rsplit(":", 1)[-1]
@@ -192,10 +172,10 @@ def _clean_port(text):
 
 
 def _try_mdns_connect(adb):
-    """Phone ki wireless service (mDNS) se judne wala address khud
-    dhund kar connect karo. Agar is client ki key pehle se trusted
-    ho (masalan PC se pairing ho chuki ho aur key copy ki gayi ho)
-    to bina kisi sawal ke jud jata hai. Mila hua address ya None."""
+    """Discover the phone's wireless connect address via mDNS and
+    connect. With an already-trusted key this needs no prompts.
+    Returns the endpoint or None.
+    """
     try:
         res = subprocess.run([adb, "mdns", "services"],
                              capture_output=True, text=True, timeout=25)
@@ -211,63 +191,41 @@ def _try_mdns_connect(adb):
 
 
 def _connect_own_phone(adb):
-    """Termux apne hi phone se Wireless ADB jorta hai - taake tool
-    USI phone ka asal Facebook Lite app launch/control kar sake
-    (bilkul wesay hi jaisay PC par browser launch hota hai).
-    Shart: Developer options > Wireless debugging ON (Wi-Fi on ho).
-    Pairing sirf pehli dafa hoti hai - code khud guide karta hai."""
-    # Pehle se paired ho to aam tareekay se jud jata hai
+    """Self-connect from Termux to this phone over Wireless ADB, so
+    the tool drives this phone's own Lite app. Needs Wireless
+    debugging ON; pairing is one-time.
+    """
+    # Already paired: plain connect works
     try:
         _adb(adb, None, "connect", "localhost:5555", timeout=15)
     except Exception:
         pass
     if _list_devices(adb):
         return True
-    # Key pehle se trusted ho (PC se pairing + key copy) to bina
-    # kisi sawal/jhanjhat ke khud jud jao - pairing maangna hi nahi
+    # Trusted key (PC pairing + key copy): connect silently,
+    # no pairing prompts needed
     if _try_mdns_connect(adb) and _list_devices(adb):
         with print_lock:
-            print(f"{GREEN}[Lite] Phone khud jud gaya (key pehle "
-                  f"se trusted hai) - pairing ki zaroorat nahi"
-                  f"{WHITE}")
+            print(f"{GREEN}[Lite] Connected - key already trusted, "
+                  f"no pairing needed{WHITE}")
         return True
     with print_lock:
-        print(f"\n{YELLOW}[Lite] Ye Termux hai - apne hi phone ke Lite "
-              f"app ko launch karne ke liye Wireless ADB jorna hai "
-              f"(sirf pehli dafa pairing hoti hai).{WHITE}")
-        print(f"{WHITE}[Lite] Phone me ye karo (SIRF EK dafa jana "
-              f"hai - dialog ki do cheezein note karke ajao):{WHITE}")
-        print(f"{WHITE}  1. Settings > Developer options > Wireless "
-              f"debugging ON karo (Wi-Fi on rakho){WHITE}")
-        print(f"{WHITE}  2. 'Pair device with pairing code' dabao - "
-              f"dialog khulega. Us me do cheezein hain: upar "
-              f"'Wi-Fi pairing code' (6 digits) aur neeche 'IP "
-              f"address & Port' (jesay 192.168.100.3:41555) - dono "
-              f"note kar lo ya screenshot le lo{WHITE}")
-        print(f"{WHITE}  3. Home dabakar Termux me ajao aur wahi do "
-              f"cheezein likh do - bas. Judne wala port tool khud "
-              f"dhund lega, wo tumhe nahi dena.{WHITE}")
-        print(f"{WHITE}  ZARORI: pehle tool ko in sawalon tak le "
-              f"ao, PHIR dialog kholo - aur note karke FORAN likho. "
-              f"Dialog khule hue zyada waqt guzra to phone use band "
-              f"kar deta hai aur pairing fail ho jati hai.{WHITE}")
-    # Pairing ki 3 koshishein - poora mode dobara chalana nahi
-    # padta. Kuch phones par peeche jate hi dialog band ho jata
-    # hai ("protocol fault" wala error ata hai); is liye tezi
-    # sab se ahem hai: dialog kholo, note karo, FORAN yahan likho.
+        print(f"\n{YELLOW}[Lite] Termux: one-time Wireless ADB "
+              f"pairing - open 'Pair device with pairing code' on "
+              f"the phone and enter its port + code below.{WHITE}")
+    # Up to 3 pairing attempts in place - some phones kill the
+    # dialog in the background ("protocol fault"), so be quick.
     paired = False
     for _try in range(1, 4):
         if _try > 1:
             with print_lock:
-                print(f"{YELLOW}[Lite] Ek aur koshish ({_try}/3): "
-                      f"dialog PHIR se kholo - naya PORT aur naya "
-                      f"CODE milega - note karke FORAN yahan likho"
+                print(f"{YELLOW}[Lite] Retry ({_try}/3): reopen the "
+                      f"pairing dialog for a fresh port + code"
                       f"{WHITE}")
         pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
-                                      f"Dialog ka 'IP address & "
-                                      f"Port' (poora likh do, jesay "
-                                      f"192.168.100.3:41555) {EKL} "))
-        pair_code = input(f" {GREEN}[{RED}●{GREEN}] Dialog ka "
+                                      f"Pairing dialog 'IP address & "
+                                      f"Port' {EKL} "))
+        pair_code = input(f" {GREEN}[{RED}●{GREEN}] Pairing dialog "
                           f"'Wi-Fi pairing code' (6 digits) {EKL} "
                           ).strip()
         if not (pair_port and pair_code):
@@ -282,50 +240,43 @@ def _connect_own_phone(adb):
                 print(f"{GREEN}[Lite] Pairing: {_out}{WHITE}")
             if "CANNOT LINK EXECUTABLE" in _out:
                 with print_lock:
-                    print(f"{RED}[Lite] Termux ka adb hi nahi chal "
-                          f"raha - use ek package chahiye. Program "
-                          f"band karke pehle ye chalao:{WHITE}")
+                    print(f"{RED}[Lite] Termux adb cannot run - a "
+                          f"package is missing. Exit and run:{WHITE}")
                     print(f"{YELLOW}    pkg install libc++{WHITE}")
-                    print(f"{RED}[Lite] Phir dobara chalao - pairing "
-                          f"phir se ho jayegi.{WHITE}")
+                    print(f"{RED}[Lite] Then start again.{WHITE}")
                 return False
             if "Successfully paired" in _out:
                 paired = True
                 break
             with print_lock:
                 if "protocol fault" in _out:
-                    print(f"{RED}[Lite] Dialog band ho chuka tha jab "
-                          f"code pohoncha - values theek theen, "
-                          f"waqt zyada lag gaya. Tezi se dobara "
-                          f"karo.{WHITE}")
+                    print(f"{RED}[Lite] Pairing failed: the dialog "
+                          f"closed before the code arrived - retry "
+                          f"quickly.{WHITE}")
                 else:
-                    print(f"{RED}[Lite] Pairing nahi hui - PORT aur "
-                          f"CODE wale number dobara check karo."
-                          f"{WHITE}")
+                    print(f"{RED}[Lite] Pairing failed - check the "
+                          f"port and code, then retry.{WHITE}")
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Lite] Pairing error: {e}{WHITE}")
     if not paired:
         return False
-    # Judna: connection port tool KHUD dhundta hai (mDNS) - user ko
-    # main window wala number dena hi nahi padta
+    # Connect port is auto-discovered via mDNS
     if not _list_devices(adb):
         _found = _try_mdns_connect(adb)
         if _found:
             with print_lock:
-                print(f"{CYAN}[Lite] Judne wala port khud mil "
-                      f"gaya: {_found}{WHITE}")
+                print(f"{CYAN}[Lite] Connect port found: "
+                      f"{_found}{WHITE}")
     if not _list_devices(adb):
-        # Aakhri rasta: user se main window wala number maango
+        # Last resort: ask for the main-window port
         with print_lock:
-            print(f"{YELLOW}[Lite] Port khud nahi mila - ek madad "
-                  f"chahiye: Wireless debugging ki MAIN window par "
-                  f"'IP address & Port' ke sath jo likha hai, wo "
-                  f"yahan poora likh do (jesay 192.168.100.3:35907)"
-                  f"{WHITE}")
+            print(f"{YELLOW}[Lite] Connect port not found "
+                  f"automatically - enter the 'IP address & Port' "
+                  f"from the Wireless debugging main window.{WHITE}")
         conn_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
-                                      f"Main window wala 'IP address "
-                                      f"& Port' {EKL} "))
+                                      f"Main window 'IP address & "
+                                      f"Port' {EKL} "))
         if conn_port:
             try:
                 _adb(adb, None, "connect", f"localhost:{conn_port}",
@@ -450,9 +401,8 @@ def _edittexts(nodes):
 
 
 def _tap_text(adb, serial, nodes, texts, timeout=15):
-    # Pehle maujooda screen par hi dhundo (har screen-parhna phone par
-    # 1-3 second leta hai - faltu parhna hi sab se bari susti thi);
-    # na mile tabhi intezaar karke dobara parho.
+    # Reuse the current dump first (each dump costs 1-3s on a
+    # phone); only wait and re-dump when not found.
     node = _find(nodes, texts)
     if not node:
         node = _find(_wait_screen(adb, serial, texts,
@@ -467,7 +417,7 @@ def _tap_text(adb, serial, nodes, texts, timeout=15):
 def _log_screen(nodes, label):
     seen = sorted({n["text"] for n in nodes if n["text"]})[:18]
     with print_lock:
-        print(f"{YELLOW}[Lite] {label}. Screen par ye texts mile: {seen}{WHITE}")
+        print(f"{YELLOW}[Lite] {label}. On-screen texts: {seen}{WHITE}")
 
 
 # ----------------------------------------------------------------------
@@ -539,10 +489,9 @@ def _launch_lite(adb, serial):
 
 
 def _find_lite_apks():
-    """`lite_apks` folder me rakhi hui Facebook Lite ki APK files
-    (mukhtalif versions). Har account par in mein se agli version
-    install hoti hai - isay kehte hain version rotation: kabhi kisi
-    version par account banta hai, kabhi kisi par."""
+    """APK files stocked in a `lite_apks` folder (several Lite
+    versions). One version installs per account - version rotation.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(os.getcwd(), "lite_apks"),
@@ -579,9 +528,8 @@ def _lite_version_name(adb, serial):
 
 
 # ----------------------------------------------------------------------
-# AUTO SETUP (ek dafa): jo folder/file chahiye code khud banata hai,
-# aur Lite ke kuch versions khud rakh leta hai - baar baar nahi.
-# ----------------------------------------------------------------------
+# AUTO SETUP (one-time): folders are created and a few Lite
+# versions are stocked automatically - once only.
 _LITE_DOWNLOAD_SOURCES = [
     ("latest", "https://d.apkpure.com/b/APK/com.facebook.lite"
                  "?version=latest"),
@@ -602,7 +550,7 @@ def _lite_apk_dirs():
 
 
 def _apk_ok(path):
-    """Download/pull hui file asal APK hai ya nahi (size + PK magic)."""
+    """True when a downloaded/pulled file is a real APK (size + PK magic)."""
     try:
         if os.path.getsize(path) < 1_000_000:
             return False
@@ -613,9 +561,10 @@ def _apk_ok(path):
 
 
 def _pull_installed_lite_apk(adb, serial, dest_dir):
-    """Phone par lagi hui ASAL Lite ka APK nikal kar folder me rakh
-    lo - ye sab se mehfooz version hai kyunke ye phone ka apna
-    official installed app hai. Filename me version bhi ajata hai."""
+    """Pull the phone's own installed Lite APK into the folder -
+    the safest version, being the phone's official installed app.
+    The version is part of the filename.
+    """
     out = _adb(adb, serial, "shell", "pm", "path",
                LITE_PACKAGE).stdout
     remote = ""
@@ -641,7 +590,7 @@ def _pull_installed_lite_apk(adb, serial, dest_dir):
 
 
 def _download_lite_apk(url, dest):
-    """Ek version download karke rakho; nakami par file hata do."""
+    """Download one Lite version into the folder; drop it on failure."""
     try:
         import requests
         with requests.get(
@@ -665,10 +614,10 @@ def _download_lite_apk(url, dest):
 
 
 def _ensure_lite_setup(adb, serial):
-    """Ek-dafa auto setup: (1) lite_apks folder khud banta hai,
-    (2) output folder tayyar, (3) Lite ke versions: folder me 2 se
-    kam hon to phone wali asal Lite nikal kar + downloads try karke
-    rakh leta hai. 2+ versions pehle se hon to kuch nahi karta."""
+    """One-time auto setup: (1) lite_apks folder, (2) output
+    folder, (3) Lite versions - when fewer than 2 are stocked, pull
+    the phone's own Lite and try downloads. No-op at 2+ versions.
+    """
     # 1) lite_apks folder
     dest_dir = None
     for d in _lite_apk_dirs():
@@ -678,7 +627,7 @@ def _ensure_lite_setup(adb, serial):
                 dest_dir = d
         except Exception:
             continue
-    # 2) Output folder (repo folder ke andar - Browser Setup jesa)
+    # 2) Output folder (inside the repo folder, like Browser Setup)
     try:
         os.makedirs(os.path.join(
             os.path.dirname(os.path.dirname(
@@ -686,19 +635,19 @@ def _ensure_lite_setup(adb, serial):
             exist_ok=True)
     except Exception:
         pass
-    # 4) Versions - pehle se 2+ hon to bus
+    # 4) Versions - skip when 2+ already stocked
     if len(_find_lite_apks()) >= 2 or dest_dir is None:
         return
     with print_lock:
-        print(f"{CYAN}[Lite] Lite versions khud rakh raha hoon (ek "
-              f"dafa ka kaam hai)...{WHITE}")
+        print(f"{CYAN}[Lite] Stocking Lite versions "
+              f"(one-time)...{WHITE}")
     got = []
     if serial:
         pulled = _pull_installed_lite_apk(adb, serial, dest_dir)
         if pulled:
             got.append(pulled)
             with print_lock:
-                print(f"{GREEN}[Lite] Phone wali asal Lite rakh li: "
+                print(f"{GREEN}[Lite] Stocked the phone's own Lite: "
                       f"{os.path.basename(pulled)}{WHITE}")
     seen = set()
     for _p in _find_lite_apks():
@@ -717,7 +666,7 @@ def _ensure_lite_setup(adb, serial):
                 size = os.path.getsize(dest)
             except Exception:
                 size = 0
-            if size in seen:  # wahi file dobara agayi - hata do
+            if size in seen:  # Same file again - drop it
                 try:
                     os.remove(dest)
                 except Exception:
@@ -726,27 +675,28 @@ def _ensure_lite_setup(adb, serial):
             seen.add(size)
             got.append(dest)
             with print_lock:
-                print(f"{GREEN}[Lite] Ek version download karke rakh "
-                      f"liya: facebook-lite-{label}.apk{WHITE}")
+                print(f"{GREEN}[Lite] Downloaded and stocked: "
+                      f"facebook-lite-{label}.apk{WHITE}")
     total = len(_find_lite_apks())
     with print_lock:
         if total >= 2:
-            print(f"{GREEN}[Lite] Ab lite_apks me {total} versions "
-                  f"tayyar hain - har account par agli lagegi{WHITE}")
+            print(f"{GREEN}[Lite] {total} Lite versions stocked in "
+                  f"lite_apks - one per account{WHITE}")
         elif total == 1:
-            print(f"{YELLOW}[Lite] Abhi 1 hi version rakhi ja saki - "
-                  f"rotation ke liye aur versions is folder me khud "
-                  f"bhi daal sakte ho: {dest_dir}{WHITE}")
+            print(f"{YELLOW}[Lite] Only 1 version stocked - add "
+                  f"more APKs to this folder for rotation: "
+                  f"{dest_dir}{WHITE}")
         else:
-            print(f"{YELLOW}[Lite] Koi version auto nahi rakhi ja "
-                  f"saki (net/masla) - jo lagi hai usi par chalega. "
-                  f"Versions chahiye to APKs is folder me rakho: "
+            print(f"{YELLOW}[Lite] No version could be stocked "
+                  f"automatically - continuing with the installed "
+                  f"one. To add versions, put APKs in: "
                   f"{dest_dir}{WHITE}")
 
 
 def _install_lite_apk(adb, serial, apk_path):
-    """Ek Lite version install karo (-d = bari version par chhoti
-    version lagane ki ijazat, taake rotation har taraf chale)."""
+    """Install one Lite version (-d allows downgrades, so rotation
+    works in both directions).
+    """
     try:
         res = _adb(adb, serial, "install", "-r", "-d", apk_path,
                    timeout=300)
@@ -757,8 +707,9 @@ def _install_lite_apk(adb, serial, apk_path):
 
 
 def _wait_device_back(adb, tries=30):
-    """Airplane/Wi-Fi toggle ke baad wireless ADB ke wapas judne
-    ka intezaar (maksad 60 second)."""
+    """Wait for wireless ADB to return after an airplane/Wi-Fi
+    toggle (up to ~60 seconds).
+    """
     for _ in range(tries):
         try:
             _adb(adb, None, "reconnect", timeout=15)
@@ -771,10 +722,10 @@ def _wait_device_back(adb, tries=30):
 
 
 def _parse_lite_number_entry(entry):
-    """Ek Number_List entry ko toro - Browser Setup ke asal
-    _parse_number_entry wala hi usool: 'number,url' ya
-    'number|url'; '#' wali ya khali line skip. (number, sms_url
-    ya None) wapas milta hai."""
+    """Split one Number_List entry - same rule as Browser Setup's
+    _parse_number_entry: 'number,url' or 'number|url'; '#' and
+    blank lines are skipped. Returns (number, sms_url or None).
+    """
     entry = (entry or "").strip()
     if entry.startswith("#") or not entry:
         return None, None
@@ -786,15 +737,13 @@ def _parse_lite_number_entry(entry):
 
 
 # ----------------------------------------------------------------------
-# OTP AUTO system - PC (Browser Setup) wala hi logic:
-# number ke sath jo SMS link (sms_url) hota hai, code wahan se khud
-# fetch hota hai, khud enter hota hai - kuch haath se nahi karna.
-# ----------------------------------------------------------------------
+# OTP auto-fetch: with an SMS link on the number, the code is
+# fetched and entered automatically - Browser Setup logic.
 def _fetch_otp_from_sms_url(sms_url, timeout=7, interval=1):
-    """SMS link se OTP fetch karo (PC wala tareeka, bilkul waisa hi):
-    link par GET, jawab plain text hota hai; 'no' se shuru ho to
-    matlab code abhi nahi aya; pehla 4-8 digit ka number hi code hai.
-    Waqt ke andar baar baar check hota rehta hai."""
+    """Fetch the OTP from an SMS link (Browser Setup method): GET
+    the link, plain-text reply; a 'no' prefix means no code yet;
+    the first 4-8 digit number is the code. Polls until timeout.
+    """
     import requests
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -812,11 +761,10 @@ def _fetch_otp_from_sms_url(sms_url, timeout=7, interval=1):
 
 
 def _tap_resend_in_lite(adb, serial):
-    """Lite me Resend wala button dabao. Pehle wo option kholo jo
-    resend ko chhupata hai ('Didn't get the code' waghera), phir
-    resend dabao. PC par ek round me 3 dafa hota hai; mobile par
-    zyada resend se 'too many attempts' ajata hai, is liye yahan
-    ek round me ek dafa - kul 3 rounds chalte hain."""
+    """Tap Resend in Lite: open the expander that hides it
+    ('Didn't get the code'), then tap Resend. One tap per round
+    here (mobile rate-limits faster than PC); 3 rounds total.
+    """
     nodes = _dump_nodes(adb, serial)
     expander = _find(nodes, TEXTS["resend_expander"])
     if expander:
@@ -827,29 +775,30 @@ def _tap_resend_in_lite(adb, serial):
     if btn:
         _tap(adb, serial, btn)
         with print_lock:
-            print(f"{CYAN}[Lite] Resend dab diya{WHITE}")
+            print(f"{CYAN}[Lite] Resend tapped{WHITE}")
         _pause(1.2, 2.2)
         return True
     return False
 
 
 def _auto_otp_rounds(adb, serial, sms_url):
-    """PC wala resend+fetch chakkar: 3 rounds, har round me resend
-    dabao phir ~7 second link check karo. Code mile to wapas do."""
+    """Resend+fetch cycle, as on PC: 3 rounds - resend, then poll
+    the link ~7s. Returns the code or None.
+    """
     with print_lock:
-        print(f"{CYAN}[Lite] OTP auto-fetch ho raha hai SMS link "
-              f"se...{WHITE}")
+        print(f"{CYAN}[Lite] Auto-fetching OTP from SMS "
+              f"link...{WHITE}")
     for _round in range(3):
         _tap_resend_in_lite(adb, serial)
         code = _fetch_otp_from_sms_url(sms_url, timeout=7, interval=1)
         if code:
             with print_lock:
-                print(f"{GREEN}[Lite] OTP mil gaya: {code}{WHITE}")
+                print(f"{GREEN}[Lite] OTP received: {code}{WHITE}")
             return code
         if _round < 2:
             with print_lock:
-                print(f"{YELLOW}[Lite] OTP abhi nahi aya, dobara "
-                      f"resend... ({_round + 2}/3){WHITE}")
+                print(f"{YELLOW}[Lite] No OTP yet, resending... "
+                      f"({_round + 2}/3){WHITE}")
     return None
 
 
@@ -887,12 +836,12 @@ def lite_create_account(adb, serial, identity, password, contact,
         nodes = _wait_screen(adb, serial, TEXTS["create_account"],
                              timeout=30)
         if not _screen_has(nodes, TEXTS["create_account"]):
-            _log_screen(nodes, "Create account wala button nahi mila")
+            _log_screen(nodes, "Create-account button not found")
             return _fail("no_create_button")
         _tap_text(adb, serial, nodes, TEXTS["create_account"])
         _pause(1.2, 2.2)
 
-        # --- Name step (kuch versions me ek hi full-name khana hota hai) ---
+        # --- Name step (some versions use a single full-name field) ---
         nodes = _dump_nodes(adb, serial)
         fields = _edittexts(nodes)
         if len(fields) < 2:
@@ -905,16 +854,16 @@ def lite_create_account(adb, serial, identity, password, contact,
             _fill_field(adb, serial, fields[0], f"{first} {last}")
         else:
             _log_screen(_dump_nodes(adb, serial),
-                        "Name ka khana nahi mila")
+                        "Name field not found")
             return _fail("name_fields_missing")
         with print_lock:
             print(f"{GREEN}[Lite] Name: {first} {last}{WHITE}")
         _tap_text(adb, serial, _dump_nodes(adb, serial), TEXTS["next"])
         _pause(1.2, 2.2)
 
-        # --- DOB + Gender: in steps ki tartib Lite versions me alag
-        #     hoti hai, is liye jo screen pehle aye wahi pehle handle
-        #     hoti hai (gender screen par koi EditText nahi hota) ---
+        # --- DOB + Gender: step order differs between Lite
+        #     versions, so whichever screen appears first is
+        #     handled first (gender screen has no EditText) ---
         def _do_dob():
             nodes = _dump_nodes(adb, serial)
             fields = _edittexts(nodes)
@@ -925,13 +874,12 @@ def lite_create_account(adb, serial, identity, password, contact,
                 _fill_field(adb, serial, fields[2], str(year))
             elif _find(nodes, cls_contains="DatePicker") or \
                     _find(nodes, cls_contains="NumberPicker"):
-                # Spinner picker: ek dafa khud set karo (Outlook ke
-                # manual CAPTCHA wala hi tareeka)
+                # Spinner picker: set it once, by hand if needed
                 with print_lock:
-                    print(f"{YELLOW}[Lite] DOB picker aya hai - emulator "
-                          f"me khud set karo: "
+                    print(f"{YELLOW}[Lite] DOB picker shown - set it "
+                          f"manually: "
                           f"{day:02d}-{month:02d}-{year}{WHITE}")
-                input(f"{CYAN}[Lite] DOB set karke Enter dabao: {WHITE}")
+                input(f"{CYAN}[Lite] Set the DOB, then press Enter: {WHITE}")
             with print_lock:
                 print(f"{GREEN}[Lite] DOB: {day:02d}-{month:02d}-{year}"
                       f"{WHITE}")
@@ -958,8 +906,8 @@ def lite_create_account(adb, serial, identity, password, contact,
             _do_dob()
             _do_gender()
 
-        # --- Contact step (email or phone); kuch versions me isi
-        #     screen par password ka khana bhi sath hota hai ---
+        # --- Contact step (email or phone); some versions also
+        #     show the password field on this same screen ---
         _password_done = False
         nodes = _dump_nodes(adb, serial)
         if kind == "email":
@@ -970,7 +918,7 @@ def lite_create_account(adb, serial, identity, password, contact,
                 nodes = _dump_nodes(adb, serial)
         fields = _edittexts(nodes)
         if not fields:
-            _log_screen(nodes, "Contact ka khana nahi mila")
+            _log_screen(nodes, "Contact field not found")
             return _fail("contact_field_missing")
         _fill_field(adb, serial, fields[0], address)
         for _extra in fields[1:]:
@@ -982,12 +930,12 @@ def lite_create_account(adb, serial, identity, password, contact,
         _tap_text(adb, serial, _dump_nodes(adb, serial), TEXTS["next"])
         _pause(1.2, 2.2)
 
-        # --- Password step (agar contact screen par na hua ho) ---
+        # --- Password step (when not shown on the contact screen) ---
         if not _password_done:
             nodes = _dump_nodes(adb, serial)
             fields = _edittexts(nodes)
             if not fields:
-                _log_screen(nodes, "Password ka khana nahi mila")
+                _log_screen(nodes, "Password field not found")
                 return _fail("password_field_missing")
             _fill_field(adb, serial, fields[0], password)
             _tap_text(adb, serial, _dump_nodes(adb, serial),
@@ -1005,16 +953,16 @@ def lite_create_account(adb, serial, identity, password, contact,
             nodes = _dump_nodes(adb, serial)
             blob_hit = _screen_has(nodes, TEXTS["blocked"])
             if blob_hit:
-                _log_screen(nodes, "Facebook ne confirmation/block screen "
-                                   "dikhaya hai")
+                _log_screen(nodes, "Confirmation/block screen shown "
+                                   "by Facebook")
                 if counter:
                     counter.update("success")
                 return {"status": "success",
                         "reason": "profile_verification_pending",
                         "result_line": result_line + "|pending"}
             if _screen_has(nodes, TEXTS["code_prompt"]):
-                # PC wala system: SMS link ho to OTP KHUD fetch aur
-                # enter hota hai; na mile to aakhir me haath se mauqa
+                # SMS link present: OTP is fetched and entered
+                # automatically (PC system); manual entry is last
                 code = None
                 if sms_url:
                     code = _auto_otp_rounds(adb, serial, sms_url)
@@ -1022,9 +970,9 @@ def lite_create_account(adb, serial, identity, password, contact,
                     _tap_resend_in_lite(adb, serial)
                 if not code:
                     with print_lock:
-                        print(f"{YELLOW}[Lite] Auto OTP nahi mila - "
-                              f"{address} par aya code yahan likho "
-                              f"(khali = skip){WHITE}")
+                        print(f"{YELLOW}[Lite] Auto OTP failed - "
+                              f"enter the code sent to {address} "
+                              f"(blank = skip){WHITE}")
                     code = input(f"{CYAN}[Lite] Code: {WHITE}").strip()
                 if not code:
                     if counter:
@@ -1054,7 +1002,7 @@ def lite_create_account(adb, serial, identity, password, contact,
 
         # Ambiguous end state: save as pending so nothing is lost
         _log_screen(_dump_nodes(adb, serial),
-                    "Aakhri screen wazeh nahi - pending save ho raha hai")
+                    "End screen unclear - saving as pending")
         if counter:
             counter.update("success")
         return {"status": "success",
@@ -1071,20 +1019,18 @@ def lite_create_account(adb, serial, identity, password, contact,
 
 
 # ----------------------------------------------------------------------
-# Proxy support - PERMANENT: proxies.txt se auto-load, har account par
-# agli proxy rotation se lagti hai, terminal par kuch set nahi karna.
-# ----------------------------------------------------------------------
+# Proxy support: proxies.txt auto-loads and rotates one proxy per
+# account; nothing is configured in the terminal.
 _ANDROID_PROXY_DIRS = ["/sdcard/Download",
                        "/storage/emulated/0/Download",
                        "/sdcard"]
 
 
 def _load_lite_proxies():
-    """proxies.txt wali proxies ko {host, port, username, password}
-    ki shakal me do (project ke apne proxy loader se). Phone par
-    Termux ke HOME wala Downloads asal phone wala NAHI hota - is
-    liye /sdcard/Download bhi alag se dekha jata hai, warna phone
-    par proxies milti hi nahi aur sawal bhi nahi ata."""
+    """Load proxies.txt entries as {host, port, username, password}
+    via the project's own proxy loader. Termux's HOME Downloads
+    is not the phone's, so /sdcard/Download is checked separately.
+    """
     try:
         from core.proxy_manager import (load_proxies_from_file,
                                         format_proxy_for_playwright)
@@ -1123,7 +1069,7 @@ def _load_lite_proxies():
                     continue
                 if out:
                     with print_lock:
-                        print(f"{CYAN}[Lite] Proxies is file se mili: "
+                        print(f"{CYAN}[Lite] Proxies loaded from: "
                               f"{path}{WHITE}")
                     return out
         return out
@@ -1132,7 +1078,7 @@ def _load_lite_proxies():
 
 
 def _find_emulator_exe(adb):
-    """adb ke sath wale SDK folder me emulator ka program dhundo."""
+    """Find the emulator program in the SDK folder next to adb."""
     try:
         sdk_root = os.path.dirname(os.path.dirname(os.path.abspath(adb)))
         for name in ("emulator.exe", "emulator"):
@@ -1145,14 +1091,14 @@ def _find_emulator_exe(adb):
 
 
 def _apply_android_proxy(adb, serial, proxy, state):
-    """Device par proxy lagao. Wapas batata hai kis tareekay se lagi:
-    'settings'  - bina-password proxy, Android ki global setting se
-                  (emulator aur asli phone, dono par chalti hai)
-    'emulator'  - password wali proxy: emulator ko -http-proxy ke
-                  sath dobara launch karke (sirf emulator par mumkin)
-    'auth_unsupported' - asli phone + password wali proxy: Android ka
-                  system proxy username/password support hi nahi karta
-    'none'      - proxy nahi lagi
+    """Apply a proxy on the device. Returns how it was applied:
+    'settings'  - no-password proxy, via Android global settings
+                  (works on emulator and real phone)
+    'emulator'  - auth proxy: emulator relaunched with -http-proxy
+                  (emulator only)
+    'auth_unsupported' - real phone + auth proxy: Android's system
+                  proxy has no username/password support
+    'none'      - no proxy applied
     """
     if not proxy or not proxy.get("host") or not proxy.get("port"):
         return "none"
@@ -1218,10 +1164,10 @@ def _clear_android_proxy(adb, serial):
 # ----------------------------------------------------------------------
 def run_android_lite_mode(password_config, counter=None,
                         numbers=None):
-    """Facebook Lite app me accounts banao - numbers bilkul
-    Browser Setup wale raste se ate hain (process_file_input):
-    jitne numbers mile utne accounts, list khatam = mode khatam,
-    koi ginti ka sawal nahi."""
+    """Create accounts in the Facebook Lite app. Numbers arrive
+    via process_file_input, exactly as in Browser Setup: one
+    account per number, list end = mode end, no count prompt.
+    """
     with print_lock:
         print(f"\n{CYAN}[Lite] === FB Lite Android Mode (Facebook Lite "
               f"app only) ==={WHITE}")
@@ -1230,33 +1176,33 @@ def run_android_lite_mode(password_config, counter=None,
     if not adb:
         with print_lock:
             if _is_termux():
-                print(f"{RED}[Lite] adb nahi mila! Termux me pehle ye "
-                      f"chalao: pkg install android-tools - phir dobara "
-                      f"try karo.{WHITE}")
+                print(f"{RED}[Lite] adb not found. In Termux run: "
+                      f"pkg install android-tools, then try "
+                      f"again.{WHITE}")
             else:
-                print(f"{RED}[Lite] adb nahi mila! Android SDK "
-                      f"platform-tools install karo (ya apne Android "
-                      f"Emulator Launcher se ek device banao - usi SDK "
-                      f"me adb hota hai), phir dobara try karo.{WHITE}")
+                print(f"{RED}[Lite] adb not found. Install the "
+                      f"Android SDK platform-tools (or create a "
+                      f"device with your Android Emulator Launcher - "
+                      f"its SDK includes adb), then try again.{WHITE}")
         return
 
     devices = _list_devices(adb)
     if not devices and _is_termux():
-        # Termux apne hi phone par hai: Wireless ADB se khud ko joro,
-        # taake isi phone ka asal Lite app launch ho
+        # Termux on the phone itself: self-connect over Wireless
+        # ADB so this phone's real Lite app is the one driven
         if _connect_own_phone(adb):
             devices = _list_devices(adb)
     if not devices:
         with print_lock:
             if _is_termux():
-                print(f"{RED}[Lite] Phone se ADB nahi jura. Wireless "
-                      f"debugging ON hai aur pairing sahi hui thi? "
-                      f"Phir se try karo.{WHITE}")
+                print(f"{RED}[Lite] ADB did not connect to the "
+                      f"phone. Check Wireless debugging is ON and "
+                      f"pairing succeeded, then retry.{WHITE}")
             else:
-                print(f"{RED}[Lite] Koi Android device/emulator "
-                      f"connected nahi hai. Pehle emulator launch karo "
-                      f"(apne launcher se) ya phone USB debugging ON "
-                      f"karke lagao, phir dobara try karo.{WHITE}")
+                print(f"{RED}[Lite] No Android device/emulator "
+                      f"connected. Launch an emulator (via your "
+                      f"launcher) or connect a phone with USB "
+                      f"debugging ON, then retry.{WHITE}")
         return
     serial = devices[0]
     if len(devices) > 1:
@@ -1274,98 +1220,91 @@ def run_android_lite_mode(password_config, counter=None,
 
     if not _lite_installed(adb, serial):
         with print_lock:
-            print(f"{YELLOW}[Lite] Is device par Facebook Lite installed "
-                  f"nahi hai.{WHITE}")
+            print(f"{YELLOW}[Lite] Facebook Lite is not installed "
+                  f"on this device.{WHITE}")
         _auto_apks = _find_lite_apks()
         if _auto_apks:
             with print_lock:
-                print(f"{CYAN}[Lite] lite_apks folder se pehli version "
-                      f"install ho rahi hai...{WHITE}")
+                print(f"{CYAN}[Lite] Installing the first version "
+                      f"from lite_apks...{WHITE}")
             _install_lite_apk(adb, serial, _auto_apks[0])
         apk = ""
         if not _lite_installed(adb, serial):
-            apk = input(f" {GREEN}[{RED}●{GREEN}] Lite APK ka full path "
-                        f"(khali = Play Store se khud install karke "
-                        f"dobara chalao) {EKL} ").strip().strip('"')
+            apk = input(f" {GREEN}[{RED}●{GREEN}] Full path to a Lite "
+                        f"APK (blank = install from Play Store and "
+                        f"rerun) {EKL} ").strip().strip('"')
         if apk and os.path.isfile(apk):
             with print_lock:
-                print(f"{CYAN}[Lite] APK install ho raha hai...{WHITE}")
+                print(f"{CYAN}[Lite] Installing APK...{WHITE}")
             _adb(adb, serial, "install", "-r", apk, timeout=180)
         if not _lite_installed(adb, serial):
             with print_lock:
-                print(f"{RED}[Lite] Facebook Lite ab bhi nahi mila - "
-                      f"mode band ho raha hai.{WHITE}")
+                print(f"{RED}[Lite] Facebook Lite still not found - "
+                      f"closing mode.{WHITE}")
             return
     with print_lock:
-        print(f"{GREEN}[Lite] Facebook Lite tayyar hai "
+        print(f"{GREEN}[Lite] Facebook Lite ready "
               f"(version {_lite_version_name(adb, serial)}){WHITE}")
 
-    # Ek-dafa auto setup: folders/files khud bante hain, Lite ke
-    # versions khud rakh liye jate hain (2+ hon to kuch nahi hota)
+    # One-time auto setup: folders and Lite versions are stocked
+    # automatically (no-op when 2+ versions already present)
     _ensure_lite_setup(adb, serial)
 
-    # Version rotation ke liye APKs (agar lite_apks folder maujood ho)
+    # APKs for version rotation (when a lite_apks folder exists)
     lite_apks = _find_lite_apks()
     if lite_apks:
         with print_lock:
-            print(f"{GREEN}[Lite] lite_apks folder me {len(lite_apks)} "
-                  f"versions mile - har account par agli version "
-                  f"lagegi{WHITE}")
+            print(f"{GREEN}[Lite] {len(lite_apks)} versions found in "
+                  f"lite_apks - one installs per account{WHITE}")
 
-    # Permanent proxy: proxies.txt khud load hoti hai, har account par
-    # agli proxy lagti hai - terminal par kabhi set nahi karna padta
+    # Permanent proxies: proxies.txt auto-loads; the next proxy
+    # applies per account - nothing to set in the terminal
     lite_proxies = _load_lite_proxies()
     proxy_state = {"avd": None, "warned": False, "via_settings": False}
     if lite_proxies:
-        # Proxies OPTIONAL hain - user ki marzi, 'n' par direct chalega
+        # Proxies are optional - 'n' runs direct
         try:
-            _ans = input(f" {GREEN}[{RED}●{GREEN}] proxies.txt se "
-                         f"{len(lite_proxies)} proxies mili hain - use "
-                         f"karni hain? (y/n) [y] {EKL} ").strip().lower()
+            _ans = input(f" {GREEN}[{RED}●{GREEN}] {len(lite_proxies)} "
+                         f"proxies found in proxies.txt - use them? "
+                         f"(y/n) [y] {EKL} ").strip().lower()
         except Exception:
             _ans = "y"
         if _ans == "n":
             lite_proxies = []
             with print_lock:
-                print(f"{CYAN}[Lite] Theek hai - proxies use nahi "
-                      f"hongi, direct connection{WHITE}")
+                print(f"{CYAN}[Lite] OK - running direct, no "
+                      f"proxies{WHITE}")
     with print_lock:
         if lite_proxies:
             print(f"{GREEN}[Lite] proxies.txt active: "
-                  f"{len(lite_proxies)} proxies - har account par agli "
-                  f"proxy khud lagegi{WHITE}")
+                  f"{len(lite_proxies)} proxies - next proxy applies "
+                  f"per account{WHITE}")
         else:
             print(f"{CYAN}[Lite] Direct connection{WHITE}")
 
-    # Bina proxy ke, mobile data par: har account se pehle khud
-    # airplane mode on/off karke naya IP lene ka option (linking se
-    # bachne ke liye IP badalna sab se ahem hai)
+    # No proxy + mobile data: optional manual airplane-mode
+    # toggle before each account, for a fresh IP
     ip_refresh_manual = False
     if not lite_proxies:
         try:
-            _ans2 = input(f" {GREEN}[{RED}●{GREEN}] Har account se "
-                          f"pehle khud airplane mode ON/OFF karke naya "
-                          f"IP lena hai? (sirf mobile data ke liye) "
+            _ans2 = input(f" {GREEN}[{RED}●{GREEN}] Toggle airplane "
+                          f"mode ON/OFF yourself before each account "
+                          f"for a new IP? (mobile data only) "
                           f"(y/n) [n] {EKL} ").strip().lower()
         except Exception:
             _ans2 = "n"
         ip_refresh_manual = (_ans2 == "y")
 
-    # Numbers: bilkul Browser Setup wala rasta - wohi asal
-    # function (core.number_manager.process_file_input) jo main.py
-    # Browser Setup aur HTTP mode dono ke liye chalata hai. Excel
-    # (.xlsx) mile to tool khud number column pehchan kar numbers
-    # nikalta hai aur khud Number_List.txt bana deta hai; warna
-    # Number_List.txt; Termux par storage folder, wahan bhi na
-    # mile to file ka path poochta hai. Koi alag menu nahi, koi
-    # haath se number/email likhna nahi - PC wala hi system.
+    # Numbers via the project's own process_file_input() - the
+    # exact function main.py uses for Browser Setup and HTTP
+    # mode (Excel files auto-extract into Number_List.txt).
     from core.number_manager import process_file_input
     raw_numbers = (numbers if numbers is not None
                    else process_file_input())
     if raw_numbers is None:
         with print_lock:
-            print(f"{RED}[Lite] Numbers nahi mile - Android Mode "
-                  f"band{WHITE}")
+            print(f"{RED}[Lite] No numbers loaded - closing "
+                  f"Android Mode{WHITE}")
         return
     queue = []
     for _entry in raw_numbers:
@@ -1375,8 +1314,8 @@ def run_android_lite_mode(password_config, counter=None,
     total = len(queue)
     if not total:
         with print_lock:
-            print(f"{RED}[Lite] Koi number nahi mila - Android Mode "
-                  f"band{WHITE}")
+            print(f"{RED}[Lite] No usable number found - closing "
+                  f"Android Mode{WHITE}")
         return
 
     from core.counter import Counter
@@ -1401,55 +1340,53 @@ def run_android_lite_mode(password_config, counter=None,
                 proxy_state["via_settings"] = True
             with print_lock:
                 if _via in ("settings", "emulator"):
-                    print(f"{GREEN}[Lite] Proxy lag gayi "
+                    print(f"{GREEN}[Lite] Proxy applied "
                           f"({_px['host']}:{_px['port']}){WHITE}")
                 elif _via == "auth_unsupported" and \
                         not proxy_state["warned"]:
                     proxy_state["warned"] = True
-                    print(f"{YELLOW}[Lite] NOTE: ye password wali proxy "
-                          f"hai aur device asli phone hai - Android ka "
-                          f"system proxy password support nahi karta. "
-                          f"Emulator par yehi proxy khud lag jayegi, ya "
-                          f"apne proxy provider par apna IP whitelist "
-                          f"kar lo (phir password ki zaroorat nahi "
-                          f"rehti). Abhi direct chal raha hai.{WHITE}")
+                    print(f"{YELLOW}[Lite] NOTE: auth (password) proxy "
+                          f"on a real phone - Android's system proxy "
+                          f"does not support passwords, so it cannot "
+                          f"be applied here. It applies automatically "
+                          f"on an emulator, or whitelist your IP with "
+                          f"the provider. Running direct for "
+                          f"now.{WHITE}")
         if lite_apks:
             _apk = lite_apks[(idx - 1) % len(lite_apks)]
             if _apk == proxy_state.get("last_apk"):
                 with print_lock:
-                    print(f"{GREEN}[Lite] Lite version wahi hai jo "
-                          f"pichle account par thi - dobara install "
-                          f"nahi ho rahi{WHITE}")
+                    print(f"{GREEN}[Lite] Lite version same as the "
+                          f"previous account - not reinstalling"
+                          f"{WHITE}")
             elif _install_lite_apk(adb, serial, _apk):
                 proxy_state["last_apk"] = _apk
                 with print_lock:
-                    print(f"{GREEN}[Lite] Is account ke liye Lite "
-                          f"version: {_lite_version_name(adb, serial)} "
+                    print(f"{GREEN}[Lite] Lite version for this "
+                          f"account: {_lite_version_name(adb, serial)} "
                           f"({os.path.basename(_apk)}){WHITE}")
             else:
                 with print_lock:
-                    print(f"{YELLOW}[Lite] Version install nahi hui "
-                          f"({os.path.basename(_apk)}) - jo lagi hai "
-                          f"usi par chalega{WHITE}")
+                    print(f"{YELLOW}[Lite] Version install failed "
+                          f"({os.path.basename(_apk)}) - continuing "
+                          f"with the installed one{WHITE}")
         if ip_refresh_manual:
             with print_lock:
-                print(f"{YELLOW}[Lite] Ab phone me Airplane mode ON "
-                      f"karke OFF kar do (naya IP milega), phir yahan "
-                      f"Enter dabao{WHITE}")
-            input(f"{CYAN}[Lite] Tayyar ho to Enter: {WHITE}")
+                print(f"{YELLOW}[Lite] Toggle airplane mode ON/OFF "
+                      f"on the phone (new IP), then press Enter "
+                      f"here{WHITE}")
+            input(f"{CYAN}[Lite] Press Enter when ready: {WHITE}")
             if not _wait_device_back(adb):
                 with print_lock:
-                    print(f"{RED}[Lite] Device wapas nahi jura - "
-                          f"Wireless debugging check karo{WHITE}")
+                    print(f"{RED}[Lite] Device did not reconnect - "
+                          f"check Wireless debugging{WHITE}")
         result = lite_create_account(adb, serial, identity, password,
                                      contact, counter)
 
         if result["status"] == "success":
             try:
-                # Saved IDs repo folder ke output/ me - bilkul
-                # Browser Setup jesa: user usi folder ko kholta hai
-                # jo git pull se device me aya hota hai (PC par bhi,
-                # Termux par bhi wahi jagah)
+                # Saved IDs go to the repo folder's output/ - the
+                # same place Browser Setup uses, on PC and Termux alike
                 output_dir = os.path.join(
                     os.path.dirname(os.path.dirname(
                         os.path.abspath(__file__))), "output")
@@ -1473,22 +1410,21 @@ def run_android_lite_mode(password_config, counter=None,
                 print(f"{RED}[Lite] Failed: "
                       f"{result.get('reason', result['status'])}{WHITE}")
 
-        # Browser Setup wala usool: number istemal ke baad list
-        # se NAHI hataya jata (hatana sirf Mode 1 / HTTP me hai)
+        # Browser Setup rule: a used number is NOT removed
+        # from the list (removal exists only in Mode 1 / HTTP)
 
         if idx < total:
             _reset_lite(adb, serial)
             with print_lock:
-                print(f"{CYAN}[Lite] Agla account 45-90 second baad - "
-                      f"jaldi jaldi accounts banana hi sab se bara "
-                      f"khatra hai{WHITE}")
+                print(f"{CYAN}[Lite] Waiting 45-90s before the "
+                      f"next account...{WHITE}")
             _pause(45.0, 90.0)
 
     with print_lock:
-        print(f"{GREEN}[Lite] List khatam - kul {total} the, sab "
-              f"ho gaye.{WHITE}")
+        print(f"{GREEN}[Lite] List finished - all {total} numbers "
+              f"processed.{WHITE}")
     if proxy_state.get("via_settings"):
         _clear_android_proxy(adb, serial)
     with print_lock:
-        print(f"\n{GREEN}[Lite] Mode khatam. Accounts file: "
+        print(f"\n{GREEN}[Lite] Mode finished. Accounts file: "
               f"android_lite_accounts.txt{WHITE}")
