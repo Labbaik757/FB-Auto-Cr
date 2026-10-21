@@ -334,6 +334,13 @@ def run_reviews_mode():
         if os.path.exists(_exe):
             _lk["executable_path"] = _exe
         browser = p.chromium.launch(**_lk)
+        # Added 2026-10-21: permanent proxies.txt support - auto-loads and
+        # rotates one proxy per account context; no file = direct (as before)
+        try:
+            from core.proxy_manager import apply_proxies_to_browser
+            apply_proxies_to_browser(browser, "Reviews")
+        except Exception:
+            pass
 
         done = 0
         for acc_line, review in test_pairs:
