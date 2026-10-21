@@ -101,7 +101,11 @@ Same logic as Mode 2's Browser Setup:
 
 - Put your numbers in **Number_List.txt** (project folder), one per
   line: `number` or `number|sms_url` (comma also works) — exactly
-  the PC format.
+  the PC format. There is **no "how many accounts" question**: the
+  tool starts at the first number, works through the list, and
+  stops at the end by itself. Like the PC, a used number is
+  removed from the file, so a re-run continues where the last one
+  stopped.
 - In the Android Setup source menu, pick **Number_List.txt**. For
   every number that has an SMS link, the confirmation code is
   **fetched from the link and typed automatically** — resend taps
