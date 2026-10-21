@@ -84,11 +84,11 @@ def run_create():
     config_state["mode"] = "Browser (Playwright)" if browser_mode else "HTTP"
 
     if browser_mode:
-        # Added 2026-10-21: FB Auto Create ke andar setup ka intekhab.
-        # 1 = purana Browser setup (neeche wala code, bilkul waisa hi).
-        # 2 = Android setup (Facebook Lite app) - alag module, alag flow;
-        #     ye select karne par purana flow yahin ruk jata hai (return).
-        print(f" {GREEN}[{RED}01{GREEN}] Browser Setup {WHITE}(Purana setup - Playwright, PC browser)")
+        # Setup choice inside FB Auto Create:
+        # 1 = Browser Setup (the original flow below, untouched).
+        # 2 = Android Setup (Facebook Lite app) - separate module;
+        #     selecting it returns from here with its own flow.
+        print(f" {GREEN}[{RED}01{GREEN}] Browser Setup {WHITE}(Playwright, PC browser)")
         print(f" {GREEN}[{RED}02{GREEN}] Android Setup {WHITE}(Facebook Lite app - emulator/phone)")
         print(f"{LINE}")
         _setup_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Setup (1/2) [1] {EKL} ").strip()
