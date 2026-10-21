@@ -383,14 +383,42 @@ def outlook_create_account(page, password_config, counter=None):
         return {"status": "error", "email": email, "reason": str(e)}
 
 
-def run_outlook_mode(count, password_config, counter=None):
-    """Run Outlook account creation for `count` accounts (sequential)."""
+def run_outlook_mode(count, password_config, counter=None, proxy_list=None, proxy_cycle=None):
+    """Run Outlook account creation for `count` accounts (sequential).
+
+    Proxy support (Mode 4):
+    - proxy_list / proxy_cycle from main.py (get_proxy_list) - round-robin
+    - If neither given, auto-loads proxies.txt if present
+    - Each account gets the NEXT proxy (per-context, no browser restart needed)
+    - Context locale/timezone are aligned to the proxy's country/timezone
+    - No proxy = direct connection (old behaviour, fully backward compatible)
+    """
     if not PLAYWRIGHT_AVAILABLE:
         print(f"{RED}Playwright not installed. Run: pip install playwright{WHITE}")
         return
 
     if counter is None:
         counter = Counter()
+
+    # --- Proxy setup ---
+    from core.proxy_manager import create_proxy_cycle, format_proxy_for_playwright, load_proxies_from_file
+    if proxy_cycle is None and proxy_list:
+        proxy_cycle = create_proxy_cycle(proxy_list)
+    if proxy_cycle is None and not proxy_list:
+        # Standalone call - try proxies.txt directly
+        try:
+            _file_proxies = load_proxies_from_file()
+            if _file_proxies:
+                proxy_list = _file_proxies
+                proxy_cycle = create_proxy_cycle(proxy_list)
+        except Exception:
+            pass
+    if proxy_list:
+        with print_lock:
+            print(f"{GREEN}[Outlook] Proxy mode: {len(proxy_list)} proxies loaded, rotation ON{WHITE}")
+    else:
+        with print_lock:
+            print(f"{YELLOW}[Outlook] No proxy - direct connection{WHITE}")
 
     with sync_playwright() as p:
         from core.browser_launcher import get_browser_choice, launch_browser
@@ -421,13 +449,47 @@ def run_outlook_mode(count, password_config, counter=None):
                 dev = random.choice(VIRTUAL_DEVICES)
                 with print_lock:
                     print(f"{CYAN}[Outlook] Virtual device: {dev['name']}{WHITE}")
-                context = browser.new_context(
+
+                # --- Next proxy in rotation (per-account) ---
+                proxy_data = next(proxy_cycle) if proxy_cycle else None
+                pw_proxy = format_proxy_for_playwright(proxy_data) if proxy_data else None
+                context_kwargs = dict(
                     viewport=dev["viewport"],
                     user_agent=dev["user_agent"],
                     device_scale_factor=dev["device_scale_factor"],
                     is_mobile=dev["is_mobile"],
                     has_touch=dev["has_touch"],
                 )
+                if pw_proxy:
+                    context_kwargs["proxy"] = pw_proxy
+                    if proxy_data.get("rotating"):
+                        # Webshare rotating: IP is assigned server-side per new
+                        # connection, so pre-known country/timezone does NOT
+                        # apply. Don't force locale/timezone - keep defaults.
+                        with print_lock:
+                            print(f"{GREEN}[Outlook] Proxy: Webshare ROTATING {pw_proxy['server']} (user: {pw_proxy.get('username','')}) - har account ko nayi IP milegi{WHITE}")
+                    else:
+                        # Align locale/timezone to proxy location (consistency)
+                        try:
+                            _loc = (proxy_data.get("language") or proxy_data.get("locale") or "en-US").replace("_", "-")
+                            context_kwargs["locale"] = _loc
+                            _tz = proxy_data.get("ip_timezone")
+                            if not _tz or _tz == "Unknown":
+                                _tz = proxy_data.get("timezone")
+                            if _tz and _tz != "Unknown":
+                                context_kwargs["timezone_id"] = _tz
+                        except Exception:
+                            pass
+                        with print_lock:
+                            print(f"{GREEN}[Outlook] Proxy: {pw_proxy['server']} ({proxy_data.get('country','?')}, {context_kwargs.get('timezone_id','?')}){WHITE}")
+                try:
+                    context = browser.new_context(**context_kwargs)
+                except Exception as e:
+                    with print_lock:
+                        print(f"{RED}[Outlook] Proxy/context failed ({e}) - skipping this account, next proxy will be used{WHITE}")
+                    if counter:
+                        counter.update("error")
+                    continue
                 _apply_fingerprint_spoof(context)
                 page = context.new_page()
                 # Apply stealth: playwright-stealth + full trace removal
