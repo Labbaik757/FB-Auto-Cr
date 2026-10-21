@@ -220,13 +220,31 @@ def _connect_own_phone(adb):
         print(f"{WHITE}  3. Home dabakar Termux me ajao aur wahi do "
               f"cheezein likh do - bas. Judne wala port tool khud "
               f"dhund lega, wo tumhe nahi dena.{WHITE}")
-    pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] Dialog "
-                                  f"ka 'IP address & Port' (poora "
-                                  f"likh do, jesay 192.168.100.3:"
-                                  f"41555) {EKL} "))
-    pair_code = input(f" {GREEN}[{RED}●{GREEN}] Dialog ka 'Wi-Fi "
-                      f"pairing code' (6 digits) {EKL} ").strip()
-    if pair_port and pair_code:
+        print(f"{WHITE}  ZARORI: pehle tool ko in sawalon tak le "
+              f"ao, PHIR dialog kholo - aur note karke FORAN likho. "
+              f"Dialog khule hue zyada waqt guzra to phone use band "
+              f"kar deta hai aur pairing fail ho jati hai.{WHITE}")
+    # Pairing ki 3 koshishein - poora mode dobara chalana nahi
+    # padta. Kuch phones par peeche jate hi dialog band ho jata
+    # hai ("protocol fault" wala error ata hai); is liye tezi
+    # sab se ahem hai: dialog kholo, note karo, FORAN yahan likho.
+    paired = False
+    for _try in range(1, 4):
+        if _try > 1:
+            with print_lock:
+                print(f"{YELLOW}[Lite] Ek aur koshish ({_try}/3): "
+                      f"dialog PHIR se kholo - naya PORT aur naya "
+                      f"CODE milega - note karke FORAN yahan likho"
+                      f"{WHITE}")
+        pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
+                                      f"Dialog ka 'IP address & "
+                                      f"Port' (poora likh do, jesay "
+                                      f"192.168.100.3:41555) {EKL} "))
+        pair_code = input(f" {GREEN}[{RED}●{GREEN}] Dialog ka "
+                          f"'Wi-Fi pairing code' (6 digits) {EKL} "
+                          ).strip()
+        if not (pair_port and pair_code):
+            continue
         try:
             res = subprocess.run(
                 [adb, "pair", f"localhost:{pair_port}"],
@@ -244,17 +262,24 @@ def _connect_own_phone(adb):
                     print(f"{RED}[Lite] Phir dobara chalao - pairing "
                           f"phir se ho jayegi.{WHITE}")
                 return False
-            if "Successfully paired" not in _out:
-                with print_lock:
+            if "Successfully paired" in _out:
+                paired = True
+                break
+            with print_lock:
+                if "protocol fault" in _out:
+                    print(f"{RED}[Lite] Dialog band ho chuka tha jab "
+                          f"code pohoncha - values theek theen, "
+                          f"waqt zyada lag gaya. Tezi se dobara "
+                          f"karo.{WHITE}")
+                else:
                     print(f"{RED}[Lite] Pairing nahi hui - PORT aur "
-                          f"CODE check karke dobara chalao. (PORT "
-                          f"dialog wala number hai, CODE 6-digit "
-                          f"wala - dono alag hain.){WHITE}")
-                return False
+                          f"CODE wale number dobara check karo."
+                          f"{WHITE}")
         except Exception as e:
             with print_lock:
                 print(f"{RED}[Lite] Pairing error: {e}{WHITE}")
-            return False
+    if not paired:
+        return False
     # Judna: connection port tool KHUD dhundta hai (mDNS) - user ko
     # main window wala number dena hi nahi padta
     if not _list_devices(adb):
