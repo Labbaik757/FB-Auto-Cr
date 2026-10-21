@@ -167,12 +167,12 @@ def submit_review(page, page_url, review_text):
         _priv.wait_for(state="visible", timeout=10000)
         _human_click(page, _priv)
         time.sleep(3)
-        # Public PLAIN TEXT hai (button nahi!)
+        # Public is PLAIN TEXT (not a button!)
         _pub = page.get_by_text("Public", exact=True).first
         _pub.wait_for(state="visible", timeout=10000)
         _human_click(page, _pub)
         time.sleep(2)
-        # Done bhi PLAIN TEXT hai (button role nahi!)
+        # Done is also PLAIN TEXT (not a button role!)
         _done = page.get_by_text("Done", exact=True).first
         _done.wait_for(state="visible", timeout=10000)
         _human_click(page, _done)
