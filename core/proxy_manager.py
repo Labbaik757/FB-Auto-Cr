@@ -1,4 +1,5 @@
 import os
+import glob as _glob
 import time
 import itertools
 from concurrent.futures import ThreadPoolExecutor
@@ -286,63 +287,117 @@ def get_no_proxy_data():
 
 # --- proxies.txt support (Mode 4 / Outlook + all modes) ---
 
-def _proxy_file_candidates(filepath=None):
-    cands = []
-    if filepath:
-        cands.append(filepath)
-    cands.append(os.path.join(os.path.abspath("."), "proxies.txt"))
+def _proxy_search_dirs():
+    dirs = []
+    dirs.append(os.path.abspath("."))
+    # Project root = parent of core/ (works even if run from another folder)
     try:
-        from core.path_manager import get_base_storage_dir
-        cands.append(os.path.join(get_base_storage_dir(), "proxies.txt"))
+        dirs.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     except Exception:
         pass
+    try:
+        from core.path_manager import get_base_storage_dir
+        dirs.append(get_base_storage_dir())
+    except Exception:
+        pass
+    home = os.path.expanduser("~")
+    dirs.append(home)
+    dirs.append(os.path.join(home, "Downloads"))
+    dirs.append(os.path.join(home, "Desktop"))
+    dirs.append(os.path.join(home, "Documents"))
+    # de-dupe, keep order, only existing dirs
+    seen = set()
+    out = []
+    for d in dirs:
+        key = os.path.normcase(os.path.abspath(d)) if d else ""
+        if key and key not in seen and os.path.isdir(d):
+            seen.add(key)
+            out.append(d)
+    return out
+
+
+def _read_proxy_lines(path):
+    """Read a file robustly (utf-8 / utf-16 / BOM) and return non-comment lines."""
+    for enc in ("utf-8-sig", "utf-16", "utf-8"):
+        try:
+            with open(path, encoding=enc) as f:
+                text = f.read()
+            if "\x00" in text:
+                continue
+            lines = []
+            for l in text.splitlines():
+                l = l.strip().strip("\ufeff")
+                if l and not l.startswith("#"):
+                    lines.append(l)
+            return lines
+        except Exception:
+            continue
+    return []
+
+
+def _proxy_file_candidates(filepath=None):
+    """Auto-find proxy file: koi naam / koi jagah fix nahi.
+    Priority: exact proxies.txt (incl. proxies.txt.txt galti) pehle, phir
+    kisi bhi *proxies* / *proxy* / Webshare* naam wali .txt file upar wali
+    folders me. proxies.example.txt hamesha skip (wo sirf template hai).
+    """
+    if filepath:
+        return [filepath]
+    cands = []
+    for d in _proxy_search_dirs():
+        # 1) exact names first
+        for name in ("proxies.txt", "proxies.txt.txt", "proxy.txt", "Proxy.txt"):
+            cands.append(os.path.join(d, name))
+        # 2) any similar name in that folder
+        try:
+            for path in _glob.glob(os.path.join(d, "*.txt")):
+                base = os.path.basename(path).lower()
+                if base == "proxies.example.txt":
+                    continue
+                if "prox" in base or "webshare" in base:
+                    cands.append(path)
+        except Exception:
+            pass
     # de-dupe, keep order
     seen = set()
     out = []
     for c in cands:
-        if c not in seen:
-            seen.add(c)
+        key = os.path.normcase(os.path.abspath(c))
+        if key not in seen:
+            seen.add(key)
             out.append(c)
     return out
 
 
 def load_proxies_from_file(filepath=None, verbose=True):
-    """Load proxies from proxies.txt (one per line, # = comment).
-    Returns list of proxy_data dicts (same shape as get_proxy_list).
-    Returns [] if file missing/empty. No 40-limit here - file can hold more,
-    rotation will cycle through all of them.
+    """Auto-load proxies from file - file jahan bhi ho, naam proxies jaisa
+    koi bhi ho (proxies.txt, Webshare_10_proxies.txt, Downloads me bhi chalegi).
+    Jis file me asal valid proxy lines hongi, wohi use hogi. Template /
+    comment-only file khud skip ho jayegi.
     """
-    target = None
-    lines = []
-    for cand in _proxy_file_candidates(filepath):
-        if os.path.exists(cand):
-            try:
-                with open(cand, encoding="utf-8") as f:
-                    raw = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
-                if raw:
-                    target = cand
-                    lines = raw
-                    break
-                elif verbose:
-                    # file exists but empty - keep looking? No, report once
-                    pass
-            except Exception:
-                continue
-    if not lines:
-        return []
+    searched = _proxy_file_candidates(filepath)
+    for cand in searched:
+        if not os.path.exists(cand):
+            continue
+        lines = _read_proxy_lines(cand)
+        if not lines:
+            continue  # empty / sirf comments - agli file dekho
+        parsed_list = []
+        for line in lines:
+            parsed = parse_proxy(line)
+            if parsed:
+                parsed_list.append(parsed)
+        if not parsed_list:
+            continue  # is file me koi valid proxy nahi - agli dekho
+        if verbose:
+            print(f"{GREEN} Loading {len(parsed_list)} proxies from {cand}")
+        with ThreadPoolExecutor(max_workers=min(len(parsed_list), 5)) as executor:
+            return list(executor.map(build_proxy_data, parsed_list))
     if verbose:
-        print(f"{GREEN} Loading {len(lines)} proxies from {target}")
-    parsed_list = []
-    for line in lines:
-        parsed = parse_proxy(line)
-        if parsed:
-            parsed_list.append(parsed)
-        elif verbose:
-            print(f"{RED} Warning: Skipping invalid proxy in file: {line}")
-    if not parsed_list:
-        return []
-    with ThreadPoolExecutor(max_workers=min(len(parsed_list), 5)) as executor:
-        return list(executor.map(build_proxy_data, parsed_list))
+        dirs = ", ".join(_proxy_search_dirs())
+        print(f"{RED} Proxy file nahi mili. In folders me dhunda: {dirs}")
+        print(f"{RED} File ka naam proxies jaisa rakho (misal: proxies.txt ya Webshare_10_proxies.txt) aur upar wali kisi folder me rakho.")
+    return []
 
 
 def format_proxy_for_playwright(proxy_data):
