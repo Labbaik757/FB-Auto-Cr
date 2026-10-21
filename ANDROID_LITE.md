@@ -118,6 +118,20 @@ Same logic as Mode 2's Browser Setup:
   read without root — so on Android the saved ID is the
   number/email + password + full details, with the OTP confirmed.
 
+## Auto setup (one time) — nothing to prepare by hand
+
+On the first run the tool prepares itself:
+
+- Creates the `lite_apks/` folder and a blank `Number_List.txt`
+  template (with the format written inside) if they don't exist,
+  and makes sure the output folder exists.
+- If fewer than 2 Lite versions are in the folder, it stocks them
+  once: it **pulls the phone's own installed Lite APK** (the safest
+  copy — it's the official app already on the device) and tries to
+  download up to 2 more versions, keeping only real APK files
+  (size + signature-header check, duplicates removed).
+- Once 2+ versions exist, this setup never runs again.
+
 ## Rotating Lite versions (different version per account)
 
 A phone can only have ONE Lite version installed at a time, so the
