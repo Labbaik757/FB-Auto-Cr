@@ -228,6 +228,17 @@ def get_proxy_list(config_state=None, render_callback=None):
         try:
             file_proxies = load_proxies_from_file(verbose=True)
             if file_proxies:
+                # Added 2026-10-21: proxies OPTIONAL hain - pehle poochho.
+                # 'n' dene par ye try yahin khatam ho jata hai aur neeche
+                # wala purana manual rasta chalta hai (wahan Enter dabane
+                # se seedha direct connection rehta hai, jaisa pehle tha).
+                try:
+                    _use_file = input(f" {GREEN}[{RED}●{GREEN}] proxies.txt se {len(file_proxies)} proxies mili hain - use karni hain? (y/n) [y] {EKL} ").strip().lower()
+                except Exception:
+                    _use_file = "y"
+                if _use_file == "n":
+                    print(f"{RED} Theek hai - proxies.txt wali proxies use nahi hongi.")
+                    raise Exception("proxies.txt declined by user")
                 proxy_list.extend(file_proxies)
                 if config_state is not None:
                     countries = set(p['country'] for p in proxy_list)
@@ -449,3 +460,62 @@ def format_proxy_for_requests(proxy_data):
             return {"http": auth_url, "https": auth_url}
         return {"http": raw_url, "https": proxy_url.get("https", raw_url)}
     return {"http": proxy_url, "https": proxy_url}
+
+
+# Added 2026-10-21: PERMANENT proxies.txt support for Playwright browser
+# modes (Mode 2 FB Auto Create, Mode 3 FB Automation). Call this right
+# after the browser launches: it auto-loads proxies.txt and wraps
+# browser.new_context so EVERY new context automatically gets the next
+# proxy in rotation - no terminal setup, ever. Fully fail-safe: any
+# problem (no file, patch unsupported, test context fails) leaves the
+# browser exactly as it was (direct connection, original behavior).
+def apply_proxies_to_browser(browser, label="Browser"):
+    try:
+        proxy_data_list = load_proxies_from_file()
+        if not proxy_data_list:
+            print(f"[{label}] No proxies.txt found - direct connection")
+            return 0
+        pw_list = []
+        for _pd in proxy_data_list:
+            try:
+                _pw = format_proxy_for_playwright(_pd)
+            except Exception:
+                _pw = None
+            if _pw:
+                pw_list.append(_pw)
+        if not pw_list:
+            print(f"[{label}] proxies.txt mili lekin koi valid proxy nahi - direct connection")
+            return 0
+        # Proxies OPTIONAL hain - user se poochho, 'n' par direct chalega
+        try:
+            _ans = input(f"[{label}] proxies.txt se {len(pw_list)} proxies mili hain - use karni hain? (y/n) [y] ").strip().lower()
+        except Exception:
+            _ans = "y"
+        if _ans == "n":
+            print(f"[{label}] Theek hai - proxies use nahi hongi, direct connection")
+            return 0
+        _orig_new_context = browser.new_context
+        _state = {"n": 0}
+
+        def _new_context_with_proxy(*args, **kwargs):
+            if "proxy" not in kwargs:
+                kwargs["proxy"] = pw_list[_state["n"] % len(pw_list)]
+                _state["n"] += 1
+            return _orig_new_context(*args, **kwargs)
+
+        browser.new_context = _new_context_with_proxy
+        try:
+            _test_ctx = browser.new_context()
+            _test_ctx.close()
+        except Exception:
+            browser.new_context = _orig_new_context
+            print(f"[{label}] Proxy lagana mumkin nahi hua - direct connection")
+            return 0
+        print(f"[{label}] proxies.txt active: {len(pw_list)} proxies - har account par agli proxy khud lagegi")
+        return len(pw_list)
+    except Exception:
+        try:
+            print(f"[{label}] Proxy setup skip - direct connection")
+        except Exception:
+            pass
+        return 0
