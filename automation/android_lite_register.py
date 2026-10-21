@@ -191,6 +191,25 @@ def _clean_port(text):
     return digits
 
 
+def _try_mdns_connect(adb):
+    """Phone ki wireless service (mDNS) se judne wala address khud
+    dhund kar connect karo. Agar is client ki key pehle se trusted
+    ho (masalan PC se pairing ho chuki ho aur key copy ki gayi ho)
+    to bina kisi sawal ke jud jata hai. Mila hua address ya None."""
+    try:
+        res = subprocess.run([adb, "mdns", "services"],
+                             capture_output=True, text=True, timeout=25)
+        _m = re.search(r"_adb-tls-connect\._tcp\s+"
+                       r"(\d+\.\d+\.\d+\.\d+:\d+)",
+                       (res.stdout or "") + (res.stderr or ""))
+        if _m:
+            _adb(adb, None, "connect", _m.group(1), timeout=20)
+            return _m.group(1)
+    except Exception:
+        pass
+    return None
+
+
 def _connect_own_phone(adb):
     """Termux apne hi phone se Wireless ADB jorta hai - taake tool
     USI phone ka asal Facebook Lite app launch/control kar sake
@@ -203,6 +222,14 @@ def _connect_own_phone(adb):
     except Exception:
         pass
     if _list_devices(adb):
+        return True
+    # Key pehle se trusted ho (PC se pairing + key copy) to bina
+    # kisi sawal/jhanjhat ke khud jud jao - pairing maangna hi nahi
+    if _try_mdns_connect(adb) and _list_devices(adb):
+        with print_lock:
+            print(f"{GREEN}[Lite] Phone khud jud gaya (key pehle "
+                  f"se trusted hai) - pairing ki zaroorat nahi"
+                  f"{WHITE}")
         return True
     with print_lock:
         print(f"\n{YELLOW}[Lite] Ye Termux hai - apne hi phone ke Lite "
@@ -283,20 +310,11 @@ def _connect_own_phone(adb):
     # Judna: connection port tool KHUD dhundta hai (mDNS) - user ko
     # main window wala number dena hi nahi padta
     if not _list_devices(adb):
-        try:
-            res = subprocess.run([adb, "mdns", "services"],
-                                 capture_output=True, text=True,
-                                 timeout=25)
-            _m = re.search(r"_adb-tls-connect\._tcp\s+"
-                           r"(\d+\.\d+\.\d+\.\d+:\d+)",
-                           (res.stdout or "") + (res.stderr or ""))
-            if _m:
-                with print_lock:
-                    print(f"{CYAN}[Lite] Judne wala port khud mil "
-                          f"gaya: {_m.group(1)}{WHITE}")
-                _adb(adb, None, "connect", _m.group(1), timeout=20)
-        except Exception:
-            pass
+        _found = _try_mdns_connect(adb)
+        if _found:
+            with print_lock:
+                print(f"{CYAN}[Lite] Judne wala port khud mil "
+                      f"gaya: {_found}{WHITE}")
     if not _list_devices(adb):
         # Aakhri rasta: user se main window wala number maango
         with print_lock:
