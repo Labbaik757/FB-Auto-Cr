@@ -228,16 +228,15 @@ def get_proxy_list(config_state=None, render_callback=None):
         try:
             file_proxies = load_proxies_from_file(verbose=True)
             if file_proxies:
-                # Added 2026-10-21: proxies OPTIONAL hain - pehle poochho.
-                # 'n' dene par ye try yahin khatam ho jata hai aur neeche
-                # wala purana manual rasta chalta hai (wahan Enter dabane
-                # se seedha direct connection rehta hai, jaisa pehle tha).
+                # Proxies are OPTIONAL - ask first. On 'n' this try
+                # ends here and the original manual path below runs
+                # (Enter there keeps a direct connection, as before).
                 try:
-                    _use_file = input(f" {GREEN}[{RED}●{GREEN}] proxies.txt se {len(file_proxies)} proxies mili hain - use karni hain? (y/n) [y] {EKL} ").strip().lower()
+                    _use_file = input(f" {GREEN}[{RED}●{GREEN}] {len(file_proxies)} proxies found in proxies.txt - use them? (y/n) [y] {EKL} ").strip().lower()
                 except Exception:
                     _use_file = "y"
                 if _use_file == "n":
-                    print(f"{RED} Theek hai - proxies.txt wali proxies use nahi hongi.")
+                    print(f"{RED} OK - proxies from proxies.txt will not be used.")
                     raise Exception("proxies.txt declined by user")
                 proxy_list.extend(file_proxies)
                 if config_state is not None:
@@ -347,10 +346,11 @@ def _read_proxy_lines(path):
 
 
 def _proxy_file_candidates(filepath=None):
-    """Auto-find proxy file: koi naam / koi jagah fix nahi.
-    Priority: exact proxies.txt (incl. proxies.txt.txt galti) pehle, phir
-    kisi bhi *proxies* / *proxy* / Webshare* naam wali .txt file upar wali
-    folders me. proxies.example.txt hamesha skip (wo sirf template hai).
+    """Auto-find the proxy file: no fixed name or location.
+    Priority: exact proxies.txt (incl. the proxies.txt.txt typo)
+    first, then any *proxies* / *proxy* / Webshare* .txt file in
+    the search folders. proxies.example.txt is always skipped
+    (it is only a template).
     """
     if filepath:
         return [filepath]
@@ -381,10 +381,11 @@ def _proxy_file_candidates(filepath=None):
 
 
 def load_proxies_from_file(filepath=None, verbose=True):
-    """Auto-load proxies from file - file jahan bhi ho, naam proxies jaisa
-    koi bhi ho (proxies.txt, Webshare_10_proxies.txt, Downloads me bhi chalegi).
-    Jis file me asal valid proxy lines hongi, wohi use hogi. Template /
-    comment-only file khud skip ho jayegi.
+    """Auto-load proxies from a file - wherever it lives and
+    whatever proxy-like name it has (proxies.txt,
+    Webshare_10_proxies.txt, Downloads included). The first file
+    with real valid proxy lines is used; template / comment-only
+    files are skipped automatically.
     """
     searched = _proxy_file_candidates(filepath)
     for cand in searched:
@@ -392,22 +393,22 @@ def load_proxies_from_file(filepath=None, verbose=True):
             continue
         lines = _read_proxy_lines(cand)
         if not lines:
-            continue  # empty / sirf comments - agli file dekho
+            continue  # empty / comments only - check the next file
         parsed_list = []
         for line in lines:
             parsed = parse_proxy(line)
             if parsed:
                 parsed_list.append(parsed)
         if not parsed_list:
-            continue  # is file me koi valid proxy nahi - agli dekho
+            continue  # no valid proxy in this file - check the next one
         if verbose:
             print(f"{GREEN} Loading {len(parsed_list)} proxies from {cand}")
         with ThreadPoolExecutor(max_workers=min(len(parsed_list), 5)) as executor:
             return list(executor.map(build_proxy_data, parsed_list))
     if verbose:
         dirs = ", ".join(_proxy_search_dirs())
-        print(f"{RED} Proxy file nahi mili. In folders me dhunda: {dirs}")
-        print(f"{RED} File ka naam proxies jaisa rakho (misal: proxies.txt ya Webshare_10_proxies.txt) aur upar wali kisi folder me rakho.")
+        print(f"{RED} No proxy file found. Searched these folders: {dirs}")
+        print(f"{RED} Name the file like proxies (e.g. proxies.txt or Webshare_10_proxies.txt) and place it in one of the folders above.")
     return []
 
 
@@ -486,13 +487,13 @@ def apply_proxies_to_browser(browser, label="Browser"):
         if not pw_list:
             print(f"[{label}] proxies.txt mili lekin koi valid proxy nahi - direct connection")
             return 0
-        # Proxies OPTIONAL hain - user se poochho, 'n' par direct chalega
+        # Proxies are OPTIONAL - ask the user; 'n' runs direct
         try:
-            _ans = input(f"[{label}] proxies.txt se {len(pw_list)} proxies mili hain - use karni hain? (y/n) [y] ").strip().lower()
+            _ans = input(f"[{label}] {len(pw_list)} proxies found in proxies.txt - use them? (y/n) [y] ").strip().lower()
         except Exception:
             _ans = "y"
         if _ans == "n":
-            print(f"[{label}] Theek hai - proxies use nahi hongi, direct connection")
+            print(f"[{label}] OK - no proxies, direct connection")
             return 0
         _orig_new_context = browser.new_context
         _state = {"n": 0}
@@ -509,13 +510,13 @@ def apply_proxies_to_browser(browser, label="Browser"):
             _test_ctx.close()
         except Exception:
             browser.new_context = _orig_new_context
-            print(f"[{label}] Proxy lagana mumkin nahi hua - direct connection")
+            print(f"[{label}] Could not apply proxies - direct connection")
             return 0
-        print(f"[{label}] proxies.txt active: {len(pw_list)} proxies - har account par agli proxy khud lagegi")
+        print(f"[{label}] proxies.txt active: {len(pw_list)} proxies - next proxy applies per account")
         return len(pw_list)
     except Exception:
         try:
-            print(f"[{label}] Proxy setup skip - direct connection")
+            print(f"[{label}] Proxy setup skipped - direct connection")
         except Exception:
             pass
         return 0
