@@ -209,27 +209,23 @@ def _connect_own_phone(adb):
               f"app ko launch karne ke liye Wireless ADB jorna hai "
               f"(sirf pehli dafa pairing hoti hai).{WHITE}")
         print(f"{WHITE}[Lite] Phone me ye karo (SIRF EK dafa jana "
-              f"hai - teeno cheezein note karke ajao, tool sab ek "
-              f"sath pooch lega):{WHITE}")
+              f"hai - dialog ki do cheezein note karke ajao):{WHITE}")
         print(f"{WHITE}  1. Settings > Developer options > Wireless "
               f"debugging ON karo (Wi-Fi on rakho){WHITE}")
-        print(f"{WHITE}  2. Wireless debugging ke andar jao - MAIN "
-              f"screen par 'IP address & Port' ke neeche jo number "
-              f"hai wo CONNECTION PORT hai, wo note karo{WHITE}")
-        print(f"{WHITE}  3. Phir 'Pair device with pairing code' "
-              f"dabao - dialog me PAIRING PORT aur 6-digit CODE hai, "
-              f"wo bhi note karo{WHITE}")
-        print(f"{WHITE}  4. Home dabakar Termux me ajao (Back mat "
-              f"dabana - dialog band ho jata hai, lekin note ki hui "
-              f"cheezein kaam karengi){WHITE}")
-    conn_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
-                                  f"Connection PORT (step 2 wala - "
-                                  f"khali choro to tool khud dhund "
-                                  f"lega) {EKL} "))
-    pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] Pairing "
-                                  f"PORT (dialog wala) {EKL} "))
-    pair_code = input(f" {GREEN}[{RED}●{GREEN}] Pairing CODE (6 "
-                      f"digits) {EKL} ").strip()
+        print(f"{WHITE}  2. 'Pair device with pairing code' dabao - "
+              f"dialog khulega. Us me do cheezein hain: upar "
+              f"'Wi-Fi pairing code' (6 digits) aur neeche 'IP "
+              f"address & Port' (jesay 192.168.100.3:41555) - dono "
+              f"note kar lo ya screenshot le lo{WHITE}")
+        print(f"{WHITE}  3. Home dabakar Termux me ajao aur wahi do "
+              f"cheezein likh do - bas. Judne wala port tool khud "
+              f"dhund lega, wo tumhe nahi dena.{WHITE}")
+    pair_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] Dialog "
+                                  f"ka 'IP address & Port' (poora "
+                                  f"likh do, jesay 192.168.100.3:"
+                                  f"41555) {EKL} "))
+    pair_code = input(f" {GREEN}[{RED}●{GREEN}] Dialog ka 'Wi-Fi "
+                      f"pairing code' (6 digits) {EKL} ").strip()
     if pair_port and pair_code:
         try:
             res = subprocess.run(
@@ -259,15 +255,8 @@ def _connect_own_phone(adb):
             with print_lock:
                 print(f"{RED}[Lite] Pairing error: {e}{WHITE}")
             return False
-    # Judna: pehle diya gaya connection port, na mile to phone ki
-    # wireless service khud dhundo (mDNS) - user ko dobara Settings
-    # me jana hi na pare
-    if conn_port:
-        try:
-            _adb(adb, None, "connect", f"localhost:{conn_port}",
-                 timeout=20)
-        except Exception:
-            pass
+    # Judna: connection port tool KHUD dhundta hai (mDNS) - user ko
+    # main window wala number dena hi nahi padta
     if not _list_devices(adb):
         try:
             res = subprocess.run([adb, "mdns", "services"],
@@ -278,11 +267,28 @@ def _connect_own_phone(adb):
                            (res.stdout or "") + (res.stderr or ""))
             if _m:
                 with print_lock:
-                    print(f"{CYAN}[Lite] Connection port khud mil "
+                    print(f"{CYAN}[Lite] Judne wala port khud mil "
                           f"gaya: {_m.group(1)}{WHITE}")
                 _adb(adb, None, "connect", _m.group(1), timeout=20)
         except Exception:
             pass
+    if not _list_devices(adb):
+        # Aakhri rasta: user se main window wala number maango
+        with print_lock:
+            print(f"{YELLOW}[Lite] Port khud nahi mila - ek madad "
+                  f"chahiye: Wireless debugging ki MAIN window par "
+                  f"'IP address & Port' ke sath jo likha hai, wo "
+                  f"yahan poora likh do (jesay 192.168.100.3:35907)"
+                  f"{WHITE}")
+        conn_port = _clean_port(input(f" {GREEN}[{RED}●{GREEN}] "
+                                      f"Main window wala 'IP address "
+                                      f"& Port' {EKL} "))
+        if conn_port:
+            try:
+                _adb(adb, None, "connect", f"localhost:{conn_port}",
+                     timeout=20)
+            except Exception:
+                pass
     return bool(_list_devices(adb))
 
 
