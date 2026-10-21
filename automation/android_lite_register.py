@@ -1109,23 +1109,58 @@ def lite_create_account(adb, serial, identity, password, contact,
 # Proxy support - PERMANENT: proxies.txt se auto-load, har account par
 # agli proxy rotation se lagti hai, terminal par kuch set nahi karna.
 # ----------------------------------------------------------------------
+_ANDROID_PROXY_DIRS = ["/sdcard/Download",
+                       "/storage/emulated/0/Download",
+                       "/sdcard"]
+
+
 def _load_lite_proxies():
     """proxies.txt wali proxies ko {host, port, username, password}
-    ki shakal me do (project ke apne proxy loader se)."""
+    ki shakal me do (project ke apne proxy loader se). Phone par
+    Termux ke HOME wala Downloads asal phone wala NAHI hota - is
+    liye /sdcard/Download bhi alag se dekha jata hai, warna phone
+    par proxies milti hi nahi aur sawal bhi nahi ata."""
     try:
         from core.proxy_manager import (load_proxies_from_file,
                                         format_proxy_for_playwright)
         from urllib.parse import urlparse
-        out = []
-        for _pd in load_proxies_from_file(verbose=False) or []:
-            _pw = format_proxy_for_playwright(_pd)
-            if not _pw:
+
+        def _parse(_list):
+            _out = []
+            for _pd in _list or []:
+                _pw = format_proxy_for_playwright(_pd)
+                if not _pw:
+                    continue
+                _u = urlparse(_pw["server"])
+                if _u.hostname and _u.port:
+                    _out.append({"host": _u.hostname, "port": _u.port,
+                                 "username": _pw.get("username"),
+                                 "password": _pw.get("password")})
+            return _out
+
+        out = _parse(load_proxies_from_file(verbose=False))
+        if out:
+            return out
+        import glob as _glob
+        for folder in _ANDROID_PROXY_DIRS:
+            try:
+                files = sorted(_glob.glob(os.path.join(folder, "*.txt")))
+            except Exception:
                 continue
-            _u = urlparse(_pw["server"])
-            if _u.hostname and _u.port:
-                out.append({"host": _u.hostname, "port": _u.port,
-                            "username": _pw.get("username"),
-                            "password": _pw.get("password")})
+            for path in files:
+                name = os.path.basename(path).lower()
+                if "prox" not in name and "webshare" not in name:
+                    continue
+                try:
+                    out = _parse(load_proxies_from_file(
+                        filepath=path, verbose=False))
+                except Exception:
+                    continue
+                if out:
+                    with print_lock:
+                        print(f"{CYAN}[Lite] Proxies is file se mili: "
+                              f"{path}{WHITE}")
+                    return out
         return out
     except Exception:
         return []
