@@ -234,6 +234,18 @@ def outlook_create_account(page, password_config, counter=None):
         _human_pause(1.0, 2.0)
         page.get_by_role("button", name="Next").first.click()
         _human_pause(2.0, 3.0)
+        # Added 2026-10-21: if this email is already taken, say so clearly
+        # here instead of failing later with a confusing timeout
+        try:
+            _em_txt = page.locator("body").inner_text(timeout=5000).lower()
+            if "already taken" in _em_txt or "is already an account" in _em_txt:
+                with print_lock:
+                    print(f"{RED}[Outlook] Email already taken: {email}{WHITE}")
+                if counter:
+                    counter.update("failed")
+                return {"status": "failed", "email": email, "reason": "email_taken"}
+        except Exception:
+            pass
         with print_lock:
             print(f"{GREEN}[Outlook] Email entered: {email}{WHITE}")
 
@@ -256,6 +268,20 @@ def outlook_create_account(page, password_config, counter=None):
             pass
         with print_lock:
             print(f"{GREEN}[Outlook] Password entered{WHITE}")
+        # Added 2026-10-21: if we are STILL on the password page and Microsoft
+        # shows its requirements error, report it here instead of failing
+        # mysteriously later on the birthdate step
+        try:
+            if page.get_by_role("textbox", name="Password").count() > 0:
+                _pw_txt = page.locator("body").inner_text(timeout=5000).lower()
+                if "passwords must have at least" in _pw_txt or "enter a longer password" in _pw_txt:
+                    with print_lock:
+                        print(f"{RED}[Outlook] Microsoft rejected the password (requirements not met){WHITE}")
+                    if counter:
+                        counter.update("failed")
+                    return {"status": "failed", "email": email, "reason": "password_rejected"}
+        except Exception:
+            pass
 
         # Step 3: Birthdate (+ random country)
         def _select_combo(combo_name, option_name):
@@ -327,6 +353,21 @@ def outlook_create_account(page, password_config, counter=None):
         _human_type(page, fn_field, first_name)
         ln_field = page.get_by_role("textbox", name="Last name").first
         _human_type(page, ln_field, last_name)
+        # Added 2026-10-21: verify BOTH name fields really hold their values.
+        # Human typing can silently miss a field; fill() sets the value
+        # directly (no click needed), so use it as a safety net.
+        try:
+            for _fld, _val in ((fn_field, first_name), (ln_field, last_name)):
+                try:
+                    _cur = _fld.input_value(timeout=3000)
+                except Exception:
+                    _cur = ""
+                if _cur.strip() != _val.strip():
+                    _fld.fill(_val)
+                    with print_lock:
+                        print(f"{YELLOW}[Outlook] Name field auto-fixed with fill(): {_val}{WHITE}")
+        except Exception:
+            pass
         # Uncheck marketing checkbox (pre-checked by default)
         try:
             checkbox = page.get_by_role("checkbox", name="I would like information, tips, and offers about Microsoft products and services.").first
@@ -339,8 +380,37 @@ def outlook_create_account(page, password_config, counter=None):
         _human_pause(1.0, 2.0)
         page.get_by_role("button", name="Next").first.click()
         _human_pause(3.0, 5.0)
+        # Added 2026-10-21: if we are STILL on the name page, refill both
+        # fields with fill() and try Next once more before giving up
+        try:
+            if page.get_by_role("textbox", name="First name").count() > 0:
+                with print_lock:
+                    print(f"{YELLOW}[Outlook] Still on name page - retrying with fill() + Next{WHITE}")
+                fn_field.fill(first_name)
+                ln_field.fill(last_name)
+                page.get_by_role("button", name="Next").first.click()
+                _human_pause(3.0, 5.0)
+        except Exception:
+            pass
         with print_lock:
             print(f"{GREEN}[Outlook] Name: {first_name} {last_name}{WHITE}")
+
+        # Added 2026-10-21: a Microsoft error page (blocked / temporarily
+        # unavailable) must not be mistaken for the CAPTCHA step
+        try:
+            _body_txt = page.locator("body").inner_text(timeout=5000).lower()
+            for _phrase in ("temporarily unavailable", "unusual activity",
+                            "account creation has been blocked",
+                            "we couldn't create your account"):
+                if _phrase in _body_txt:
+                    with print_lock:
+                        print(f"{RED}[Outlook] Microsoft error page: {_phrase}{WHITE}")
+                    if counter:
+                        counter.update("failed")
+                    return {"status": "failed", "email": email,
+                            "reason": f"microsoft_error:{_phrase}"}
+        except Exception:
+            pass
 
         # Step 5: CAPTCHA - MANUAL (user solves it themselves)
         with print_lock:
@@ -499,6 +569,12 @@ def run_outlook_mode(count, password_config, counter=None, proxy_list=None, prox
                     except Exception:
                         pass
                 _apply_trace_removal(page)
+                # Added 2026-10-21: cap every action at 15s (was 30s) so one
+                # stuck field can never hang the whole run silently
+                try:
+                    page.set_default_timeout(15000)
+                except Exception:
+                    pass
                 _accounts_since_restart += 1
 
                 try:
