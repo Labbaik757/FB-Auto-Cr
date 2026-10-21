@@ -97,15 +97,10 @@ def run_create():
             config_state["mode"] = "FB Auto Create (Android Lite)"
             password_config = select_password_config(config_state, lambda: render_config(config_state))
             render_config(config_state)
-            try:
-                _count = int(input(f" {GREEN}[{RED}●{GREEN}] How many accounts? {WHITE}").strip())
-            except Exception:
-                _count = 1
-            render_config(config_state)
             input(f"\n {WHITE}Press Enter to start Facebook Lite (Android) automation... ")
             logo()
             counter = Counter()
-            run_android_lite_mode(_count, password_config, counter)
+            run_android_lite_mode(password_config, counter)
             input(f"\n {WHITE}Press Enter to exit... ")
             return
         # Browser mode: simplified flow (no device/server/proxy needed)
