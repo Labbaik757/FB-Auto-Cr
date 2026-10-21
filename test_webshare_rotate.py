@@ -1,21 +1,20 @@
 """
-TEST FILE - Webshare Rotating Proxy for Mode 4 (Outlook) - ALAG TEST
+TEST FILE - Webshare Rotating Proxy for Mode 4 (Outlook)
 ====================================================================
-Webshare rotating ka official tareeka (unki site ka code):
+Webshare's official rotating setup (from their site's code):
     proxy = "http://USERNAME-rotate:PASSWORD@p.webshare.io:80/"
-    - Ek hi endpoint, koi list nahi
-    - Username me "-rotate" lagana zaroori hai
-    - Har nayi connection par Webshare khud nayi IP deta hai
+    - A single endpoint, no list
+    - "-rotate" in the username is required
+    - Every new connection gets a fresh IP from Webshare
 
-Apni detail proxies.txt me sirf EK line me daalo:
+Put your details in proxies.txt as ONE line:
     http://YOURUSER-rotate:YOURPASS@p.webshare.io:80
 
 Run:
     python test_webshare_rotate.py           # offline: format/rotate-detect test
-    python test_webshare_rotate.py --live    # live: 3 dafa IP check, har dafa alag IP aani chahiye
+    python test_webshare_rotate.py --live    # live: 3 IP checks, a different IP each time
 
-Jab live test me 3 alag IPs aayein, samjho rotation kaam kar rahi hai.
-Phir hi ye GitHub project me permanent hoga.
+When the live test shows 3 different IPs, rotation works.
 """
 import os
 import sys
@@ -45,7 +44,7 @@ def check(name, ok, detail=""):
 
 def test_official_format():
     print("\n== 1. Webshare official format ==")
-    # Yehi format Webshare apni site par deta hai (Python example)
+    # The format Webshare gives on their site (Python example)
     raw = "http://myuser-rotate:mypass@p.webshare.io:80/"
     p = parse_proxy(raw)
     check("parse server", p and p["http"] == "http://p.webshare.io:80", f"-> {p}")
@@ -53,18 +52,18 @@ def test_official_format():
     check("password", p and p.get("password") == "mypass")
     check("is_rotating detect", is_rotating_proxy(p) is True)
 
-    # Bina -rotate wala Webshare = rotating NAHI (static/direct hoga)
+    # Webshare without -rotate = NOT rotating (static/direct)
     p2 = parse_proxy("http://myuser:mypass@p.webshare.io:80/")
     check("bina -rotate = not rotating", is_rotating_proxy(p2) is False)
 
-    # requests wala Webshare official code bhi yahi dict banata hai:
+    # Webshare's official requests code builds this same dict:
     req_format = {
         "http": "http://myuser-rotate:mypass@p.webshare.io:80/",
         "https": "http://myuser-rotate:mypass@p.webshare.io:80/",
     }
     print(f"  Webshare requests code: {req_format}")
 
-    # Playwright format (Mode 4 ke liye) - server alag, user/pass alag fields
+    # Playwright format (for Mode 4) - server separate, user/pass separate fields
     fake_data = {
         "proxy": p, "country": "United States", "country_code": "US",
         "locale": "en_US", "language": "en-US",
@@ -79,7 +78,7 @@ def test_official_format():
 
 def test_build_skips_geo():
     print("\n== 2. Rotating proxy par geo-check skip ==")
-    print("  (Rotating par ip-api check karna bekar hai - wo IP browser ko nahi milegi)")
+    print("  (On rotating proxies an ip-api check is useless - the browser gets a different IP)")
     p = parse_proxy("http://myuser-rotate:mypass@p.webshare.io:80/")
     data = build_proxy_data(p)
     check("rotating flag set", data.get("rotating") is True)
@@ -93,7 +92,7 @@ def load_my_webshare():
 
 
 def test_live():
-    print("\n== 3. LIVE test - 3 connections, 3 alag IPs aani chahiye ==")
+    print("\n== 3. LIVE test - 3 connections, 3 different IPs expected ==")
     ws = load_my_webshare()
     if not ws:
         print("  [SKIP] proxies.txt me Webshare rotating line nahi mili")
@@ -103,7 +102,7 @@ def test_live():
     pw_proxy = format_proxy_for_playwright(data)
     print(f"  Endpoint: {pw_proxy['server']} user={pw_proxy.get('username')}")
 
-    # Pehle requests se test (Webshare ka apna official tareeka)
+    # First test with requests (Webshare's own official method)
     try:
         import requests
         proxy_url = f"http://{pw_proxy['username']}:{pw_proxy['password']}@p.webshare.io:80"
@@ -113,12 +112,12 @@ def test_live():
             ip = r.text.strip()
             ips.append(ip)
             print(f"    Request {i+1}: IP = {ip}")
-        check("3 IPs mile", len(ips) == 3)
-        check("IPs alag hain (rotation kaam kar rahi hai)", len(set(ips)) > 1, f"-> {ips}")
+        check("got 3 IPs", len(ips) == 3)
+        check("IPs are different (rotation is working)", len(set(ips)) > 1, f"-> {ips}")
     except Exception as e:
         check("requests live test", False, f"{e}")
 
-    # Phir Playwright se test (Mode 4 asal me yahi use karega)
+    # Then test with Playwright (what Mode 4 actually uses)
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
@@ -133,9 +132,9 @@ def test_live():
                 print(f"    Browser context {i+1}: IP = {ip}")
                 ctx.close()
             browser.close()
-            check("browser IPs alag hain", len(set(browser_ips)) > 1, f"-> {browser_ips}")
+            check("browser IPs are different", len(set(browser_ips)) > 1, f"-> {browser_ips}")
     except ImportError:
-        print("  [SKIP] Playwright nahi hai - browser wala hissa skip")
+        print("  [SKIP] Playwright not installed - browser part skipped")
     except Exception as e:
         check("playwright live test", False, f"{e}")
 
@@ -149,7 +148,7 @@ if __name__ == "__main__":
     if "--live" in sys.argv:
         test_live()
     else:
-        print("\n  Live ke liye pehle proxies.txt me apni Webshare line daalo, phir:")
+        print("\n  For live: first put your Webshare line in proxies.txt, then:")
         print("  python test_webshare_rotate.py --live")
     print(f"\n{'='*62}\n RESULT: {PASS} passed, {FAIL} failed\n{'='*62}")
     sys.exit(1 if FAIL else 0)
