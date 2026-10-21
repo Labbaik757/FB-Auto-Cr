@@ -415,12 +415,12 @@ def outlook_create_account(page, password_config, counter=None):
         # Step 5: CAPTCHA - MANUAL (user solves it themselves)
         with print_lock:
             print(f"\n{YELLOW}{'='*50}{WHITE}")
-            print(f"{YELLOW}[Outlook] CAPTCHA aya hai - khud solve karo!{WHITE}")
+            print(f"{YELLOW}[Outlook] CAPTCHA shown - solve it manually!{WHITE}")
             print(f"{YELLOW}[Outlook] Browser mein press-and-hold karo,{WHITE}")
-            print(f"{YELLOW}[Outlook] phir yahan Enter dabao...{WHITE}")
+            print(f"{YELLOW}[Outlook] then press Enter here...{WHITE}")
             print(f"{YELLOW}{'='*50}\n{WHITE}")
         try:
-            input(f"{CYAN}[Outlook] CAPTCHA solve karke Enter dabao: {WHITE}")
+            input(f"{CYAN}[Outlook] Solve the CAPTCHA, then press Enter: {WHITE}")
         except Exception:
             pass
         _human_pause(2.0, 3.0)
