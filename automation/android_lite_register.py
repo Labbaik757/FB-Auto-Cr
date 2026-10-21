@@ -616,7 +616,8 @@ def _pull_installed_lite_apk(adb, serial, dest_dir):
     """Phone par lagi hui ASAL Lite ka APK nikal kar folder me rakh
     lo - ye sab se mehfooz version hai kyunke ye phone ka apna
     official installed app hai. Filename me version bhi ajata hai."""
-    out = _adb(adb, serial, "shell", "pm", "path", LITE_PACKAGE)
+    out = _adb(adb, serial, "shell", "pm", "path",
+               LITE_PACKAGE).stdout
     remote = ""
     for line in (out or "").splitlines():
         line = line.strip()
