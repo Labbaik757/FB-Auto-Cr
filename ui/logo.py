@@ -2,7 +2,7 @@ import os
 import platform
 from ui.colors import GREEN, CYAN, RED, ORANGE, LINE
 
-VERSION = "2.1"
+VERSION = "3.0"
 
 
 # Clear terminal screen (cross-platform)
