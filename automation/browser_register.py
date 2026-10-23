@@ -119,13 +119,18 @@ def _select_gender(page, gender):
     opt = "Female" if gender.lower() == "female" else "Male"
     ok = False
     try:
-        # Try exact name first, then 4th combobox (after 3 birthday ones)
+        # The gender combobox has NO accessible name on the
+        # current form - "Select your gender" is only its
+        # placeholder text - so a by-name lookup can never
+        # match and just burns its full timeout. Locate it by
+        # that visible text instead (verified on the live
+        # form); the 4th combobox stays as a last resort.
+        combo = page.locator('[role="combobox"]:has-text("Select your gender")').first
         try:
-            combo = page.get_by_role("combobox", name="Select your gender")
-            combo.wait_for(timeout=5000)
+            combo.wait_for(timeout=3000)
         except Exception:
             with print_lock:
-                print(f"{YELLOW}[Browser] Gender by name not found, trying 4th combobox{WHITE}")
+                print(f"{YELLOW}[Browser] Gender by text not found, trying 4th combobox{WHITE}")
             combo = page.get_by_role("combobox").nth(3)
             combo.wait_for(timeout=5000)
         combo.click()
