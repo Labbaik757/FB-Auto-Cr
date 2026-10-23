@@ -701,21 +701,47 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     with print_lock:
                         print(f"{YELLOW}[Browser] Resend button not found{WHITE}")
 
-            # Auto-fetch failed -> 10s manual entry window, then skip
+            # Auto-fetch failed -> wait for MANUAL entry in the
+            # browser. No timeout and no skip: the flow does not
+            # move until an OTP is entered. The code field is
+            # polled - the moment a complete code is typed in the
+            # browser it is picked up instantly and the flow
+            # continues below. If the user submits the code
+            # himself (the code page goes away), that is detected
+            # too and the result is judged after this block.
             if not code:
                 with print_lock:
-                    print(f"{YELLOW}[Browser] OTP not received. Enter manually within 10s (or wait to skip):{WHITE}")
-                manual = _input_with_timeout(f"{CYAN}Code (10s): {WHITE}", timeout=10)
-                if manual and manual.strip() and manual.strip().lower() != "skip":
-                    code = manual.strip()
-                    with print_lock:
-                        print(f"{GREEN}[Browser] Manual OTP: {code}{WHITE}")
-                else:
-                    with print_lock:
-                        print(f"{YELLOW}[Browser] No OTP, skipping to next account.{WHITE}")
-                    if counter:
-                        counter.update("failed")
-                    return {"status": "failed", "number": phone_number, "reason": "otp_not_received"}
+                    print(f"{YELLOW}[Browser] OTP not received automatically.{WHITE}")
+                    print(f"{YELLOW}[Browser] Enter the OTP in the BROWSER - waiting until you do (no timeout)...{WHITE}")
+                _wait_ticks = 0
+                while not code:
+                    try:
+                        _fld = page.get_by_label("Confirmation code", exact=True)
+                        if _fld.count() > 0:
+                            _val = (_fld.first.input_value() or "").strip()
+                            if len(_val) >= 5 and _val.isdigit():
+                                # Must be stable across two reads
+                                # so a half-typed code is not grabbed
+                                time.sleep(0.7)
+                                _val2 = (_fld.first.input_value() or "").strip()
+                                if _val2 == _val:
+                                    code = _val
+                                    with print_lock:
+                                        print(f"{GREEN}[Browser] Manual OTP detected in browser: {code}{WHITE}")
+                                    break
+                        _wu = page.url.lower()
+                        if "confirm" not in _wu and "checkpoint" not in _wu:
+                            code = "skip"
+                            with print_lock:
+                                print(f"{CYAN}[Browser] Code page already submitted - checking result{WHITE}")
+                            break
+                    except Exception:
+                        pass
+                    _wait_ticks += 1
+                    if _wait_ticks % 60 == 0:
+                        with print_lock:
+                            print(f"{YELLOW}[Browser] Still waiting for OTP entry in the browser...{WHITE}")
+                    time.sleep(0.5)
 
             if code.lower() != "skip" and code:
                 # Fill OTP and confirm (per reference)
@@ -839,6 +865,43 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     with print_lock:
                         print(f"{RED}[Browser] Code submission error: {e}{WHITE}")
 
+            # Reached when the code was submitted manually in
+            # the browser (or a submission step errored): if a
+            # login cookie exists, open the profile and judge by
+            # that - exactly like the automatic path does.
+            try:
+                _m_cookies = page.context.cookies()
+                _m_uid = next((c["value"] for c in _m_cookies
+                               if c["name"] == "c_user"), None)
+            except Exception:
+                _m_cookies = []
+                _m_uid = None
+            if _m_uid:
+                _m_ok = False
+                try:
+                    page.goto(f"https://www.facebook.com/{_m_uid}",
+                              wait_until="domcontentloaded",
+                              timeout=30000)
+                    _m_url = page.url.lower()
+                    _m_ok = ("confirmemail" not in _m_url
+                             and "checkpoint" not in _m_url)
+                except Exception:
+                    pass
+                if _m_ok:
+                    with print_lock:
+                        print(f"{GREEN}[Browser] Profile open - holding 5s{WHITE}")
+                    time.sleep(5)
+                    _m_cookie_str = "; ".join(
+                        [f"{c['name']}={c['value']}" for c in _m_cookies])
+                    if counter:
+                        counter.update("success")
+                    return {
+                        "status": "success",
+                        "uid": _m_uid,
+                        "password": password,
+                        "cookies": _m_cookie_str,
+                        "result_line": f"{_m_uid}|{password}|{_m_cookie_str}",
+                    }
             if counter:
                 counter.update("failed")
             return {"status": "failed", "reason": "verification_required"}
