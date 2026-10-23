@@ -352,6 +352,35 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         page.goto("https://www.facebook.com/r.php", wait_until="domcontentloaded")
         _human_pause(1.5, 3.0)
 
+        # Facebook sometimes serves a "Sorry, something went
+        # wrong" error page instead of the form - there is no
+        # form on it at all, so waiting for form selectors just
+        # hangs. Detect it and reload (a fresh load usually
+        # brings the real form); fail fast if it persists.
+        _fb_error = False
+        for _load_try in range(3):
+            try:
+                _body = page.locator("body").inner_text(timeout=3000).lower()
+            except Exception:
+                _body = ""
+            _fb_error = "something went wrong" in _body
+            if not _fb_error:
+                break
+            if _load_try < 2:
+                with print_lock:
+                    print(f"{YELLOW}[Browser] Facebook error page - reloading ({_load_try + 1}/2){WHITE}")
+                try:
+                    page.reload(wait_until="domcontentloaded")
+                except Exception:
+                    pass
+                _human_pause(2.0, 3.5)
+        if _fb_error:
+            page.screenshot(path="fb_reg_debug.png")
+            with print_lock:
+                print(f"{RED}[Browser] Facebook error page persists - signup form unavailable{WHITE}")
+            counter.update("failed")
+            return {"status": "failed", "number": phone_number, "reason": "facebook error page"}
+
         # Debug: check what page actually loaded
         with print_lock:
             print(f"{CYAN}[Browser] Page URL: {page.url}{WHITE}")
