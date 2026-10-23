@@ -1019,64 +1019,11 @@ def lite_create_account(adb, serial, identity, password, contact,
 
 
 # ----------------------------------------------------------------------
-# Proxy support: proxies.txt auto-loads and rotates one proxy per
-# account; nothing is configured in the terminal.
-_ANDROID_PROXY_DIRS = ["/sdcard/Download",
-                       "/storage/emulated/0/Download",
-                       "/sdcard"]
-
-
-def _load_lite_proxies():
-    """Load proxies.txt entries as {host, port, username, password}
-    via the project's own proxy loader. Termux's HOME Downloads
-    is not the phone's, so /sdcard/Download is checked separately.
-    """
-    try:
-        from core.proxy_manager import (load_proxies_from_file,
-                                        format_proxy_for_playwright)
-        from urllib.parse import urlparse
-
-        def _parse(_list):
-            _out = []
-            for _pd in _list or []:
-                _pw = format_proxy_for_playwright(_pd)
-                if not _pw:
-                    continue
-                _u = urlparse(_pw["server"])
-                if _u.hostname and _u.port:
-                    _out.append({"host": _u.hostname, "port": _u.port,
-                                 "username": _pw.get("username"),
-                                 "password": _pw.get("password")})
-            return _out
-
-        out = _parse(load_proxies_from_file(verbose=False))
-        if out:
-            return out
-        import glob as _glob
-        for folder in _ANDROID_PROXY_DIRS:
-            try:
-                files = sorted(_glob.glob(os.path.join(folder, "*.txt")))
-            except Exception:
-                continue
-            for path in files:
-                name = os.path.basename(path).lower()
-                if "prox" not in name and "webshare" not in name:
-                    continue
-                try:
-                    out = _parse(load_proxies_from_file(
-                        filepath=path, verbose=False))
-                except Exception:
-                    continue
-                if out:
-                    with print_lock:
-                        print(f"{CYAN}[Lite] Proxies loaded from: "
-                              f"{path}{WHITE}")
-                    return out
-        return out
-    except Exception:
-        return []
-
-
+# Proxy support: exactly the HTTP mode logic - main.py loads the
+# list with get_proxy_list() and rotates it with
+# create_proxy_cycle(); this module only applies each proxy_data
+# on the device (the Android transport part).
+# ----------------------------------------------------------------------
 def _find_emulator_exe(adb):
     """Find the emulator program in the SDK folder next to adb."""
     try:
@@ -1090,8 +1037,9 @@ def _find_emulator_exe(adb):
     return None
 
 
-def _apply_android_proxy(adb, serial, proxy, state):
-    """Apply a proxy on the device. Returns how it was applied:
+def _apply_android_proxy(adb, serial, proxy_data, state):
+    """Apply one proxy_data (the HTTP mode dict from get_proxy_list)
+    on the device. Returns how it was applied:
     'settings'  - no-password proxy, via Android global settings
                   (works on emulator and real phone)
     'emulator'  - auth proxy: emulator relaunched with -http-proxy
@@ -1100,9 +1048,22 @@ def _apply_android_proxy(adb, serial, proxy, state):
                   proxy has no username/password support
     'none'      - no proxy applied
     """
-    if not proxy or not proxy.get("host") or not proxy.get("port"):
+    if not proxy_data or not proxy_data.get("proxy"):
+        return "none"
+    try:
+        from core.proxy_manager import format_proxy_for_playwright
+        from urllib.parse import urlparse
+        _pw = format_proxy_for_playwright(proxy_data)
+        _u = urlparse(_pw["server"]) if _pw else None
+        if not _u or not _u.hostname or not _u.port:
+            return "none"
+        proxy = {"host": _u.hostname, "port": _u.port,
+                 "username": _pw.get("username"),
+                 "password": _pw.get("password")}
+    except Exception:
         return "none"
     host, port = proxy["host"], proxy["port"]
+    state["endpoint"] = f"{host}:{port}"
     if not proxy.get("username"):
         try:
             _shell(adb, serial,
@@ -1163,10 +1124,13 @@ def _clear_android_proxy(adb, serial):
 # Mode entry point (called from main.py: Mode 2 -> Android Setup)
 # ----------------------------------------------------------------------
 def run_android_lite_mode(password_config, counter=None,
-                        numbers=None):
+                        numbers=None, proxy_list=None,
+                        proxy_cycle=None):
     """Create accounts in the Facebook Lite app. Numbers arrive
     via process_file_input, exactly as in Browser Setup: one
     account per number, list end = mode end, no count prompt.
+    Proxies arrive exactly as in HTTP mode: main.py passes the
+    get_proxy_list() list and its create_proxy_cycle() cycle.
     """
     with print_lock:
         print(f"\n{CYAN}[Lite] === FB Lite Android Mode (Facebook Lite "
@@ -1257,35 +1221,25 @@ def run_android_lite_mode(password_config, counter=None,
             print(f"{GREEN}[Lite] {len(lite_apks)} versions found in "
                   f"lite_apks - one installs per account{WHITE}")
 
-    # Permanent proxies: proxies.txt auto-loads; the next proxy
-    # applies per account - nothing to set in the terminal
-    lite_proxies = _load_lite_proxies()
+    # Proxies: exactly the HTTP mode logic - main.py has already
+    # loaded the list (get_proxy_list) and built the rotation
+    # cycle (create_proxy_cycle). Each account below takes
+    # next(proxy_cycle); no cycle means a direct connection.
+    if proxy_list is None:
+        proxy_list = []
     proxy_state = {"avd": None, "warned": False, "via_settings": False}
-    if lite_proxies:
-        # Proxies are optional - 'n' runs direct
-        try:
-            _ans = input(f" {GREEN}[{RED}●{GREEN}] {len(lite_proxies)} "
-                         f"proxies found in proxies.txt - use them? "
-                         f"(y/n) [y] {EKL} ").strip().lower()
-        except Exception:
-            _ans = "y"
-        if _ans == "n":
-            lite_proxies = []
-            with print_lock:
-                print(f"{CYAN}[Lite] OK - running direct, no "
-                      f"proxies{WHITE}")
     with print_lock:
-        if lite_proxies:
-            print(f"{GREEN}[Lite] proxies.txt active: "
-                  f"{len(lite_proxies)} proxies - next proxy applies "
-                  f"per account{WHITE}")
+        if proxy_list:
+            print(f"{GREEN}[Lite] Proxies active: "
+                  f"{len(proxy_list)} - next proxy applies per "
+                  f"account{WHITE}")
         else:
             print(f"{CYAN}[Lite] Direct connection{WHITE}")
 
     # No proxy + mobile data: optional manual airplane-mode
     # toggle before each account, for a fresh IP
     ip_refresh_manual = False
-    if not lite_proxies:
+    if not proxy_list:
         try:
             _ans2 = input(f" {GREEN}[{RED}●{GREEN}] Toggle airplane "
                           f"mode ON/OFF yourself before each account "
@@ -1333,15 +1287,17 @@ def run_android_lite_mode(password_config, counter=None,
 
         identity = _gen_identity()
         password = _get_password(password_config)
-        if lite_proxies:
-            _px = lite_proxies[(idx - 1) % len(lite_proxies)]
-            _via = _apply_android_proxy(adb, serial, _px, proxy_state)
+        proxy_data = next(proxy_cycle) if proxy_cycle else None
+        if proxy_data:
+            _via = _apply_android_proxy(adb, serial, proxy_data,
+                                        proxy_state)
             if _via == "settings":
                 proxy_state["via_settings"] = True
             with print_lock:
                 if _via in ("settings", "emulator"):
                     print(f"{GREEN}[Lite] Proxy applied "
-                          f"({_px['host']}:{_px['port']}){WHITE}")
+                          f"({proxy_state.get('endpoint', '')})"
+                          f"{WHITE}")
                 elif _via == "auth_unsupported" and \
                         not proxy_state["warned"]:
                     proxy_state["warned"] = True
