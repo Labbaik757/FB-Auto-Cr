@@ -221,6 +221,45 @@ def _click_resend_twice(page):
     return clicked
 
 
+def _find_continue_button(page, timeout_s=12):
+    """Find the confirmation page's primary button after OTP entry.
+
+    The button's NAME is the fragile part, not its role: live
+    check (2026-10-23) of the current signup flow showed the
+    primary action labeled 'Submit' with no 'Continue' element
+    anywhere, and the old exact-name 'Continue' lookup timed out
+    on the code page. So try every known label across button /
+    link / role-button forms. Mirrors the selector-chain style
+    used for the resend button above; polls for late renders.
+    """
+    selectors = [
+        'button:has-text("Continue")',
+        'a:has-text("Continue")',
+        '[role="button"]:has-text("Continue")',
+        'button:has-text("Confirm")',
+        'a:has-text("Confirm")',
+        '[role="button"]:has-text("Confirm")',
+        'button:has-text("Next")',
+        'a:has-text("Next")',
+        '[role="button"]:has-text("Next")',
+        'button:has-text("Submit")',
+        'a:has-text("Submit")',
+        '[role="button"]:has-text("Submit")',
+    ]
+    deadline = time.time() + timeout_s
+    while True:
+        for sel in selectors:
+            try:
+                btn = page.locator(sel).first
+                if btn.count() > 0 and btn.is_visible(timeout=500):
+                    return btn
+            except Exception:
+                continue
+        if time.time() >= deadline:
+            return None
+        time.sleep(0.5)
+
+
 def _fetch_otp_from_url(page, sms_url, timeout=20, interval=1):
     """
     Fetch OTP via HTTP requests (simple API endpoint).
@@ -311,7 +350,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
 
         # Navigate to Facebook registration
         page.goto("https://www.facebook.com/r.php", wait_until="domcontentloaded")
-        _human_pause(2.0, 4.0)
+        _human_pause(0.8, 1.5)  # form wait below is event-driven
 
         # Debug: check what page actually loaded
         with print_lock:
@@ -464,8 +503,24 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             counter.update("failed")
             return {"status": "failed", "number": phone_number, "reason": "submit not found"}
 
-        # Wait for result - either success (logged in) or OTP/code page
-        _human_pause(3.0, 5.0)
+        # Wait for result - either success (logged in) or OTP/code
+        # page. Smart wait: proceed the moment the page settles
+        # (URL off the reg page, code field, or login cookie) -
+        # no fixed sleep (max ~8s).
+        for _ in range(16):
+            try:
+                _u = page.url.lower()
+                if "/reg" not in _u and "/r.php" not in _u:
+                    break
+                if page.get_by_label("Confirmation code",
+                                     exact=True).count() > 0:
+                    break
+                if any(c["name"] == "c_user"
+                       for c in page.context.cookies()):
+                    break
+            except Exception:
+                pass
+            time.sleep(0.5)
 
         # Verify we actually left the reg page (navigation = good sign)
         try:
@@ -473,8 +528,14 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             with print_lock:
                 print(f"{CYAN}[Browser] After submit URL: {current_url}{WHITE}")
         except Exception:
-            # Page is navigating, wait for it to settle
-            _human_pause(3.0, 5.0)
+            # Page is navigating - brief poll for it to settle
+            # instead of a fixed sleep
+            for _ in range(8):
+                try:
+                    _probe = page.url
+                    break
+                except Exception:
+                    time.sleep(0.5)
             try:
                 current_url = page.url
             except Exception:
@@ -602,12 +663,29 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                     # Click Confirm, handle navigation as success
                     # After OTP fill, click Continue -> profile opens automatically
                     try:
-                        continue_btn = page.get_by_role("button", name="Continue", exact=True)
-                        continue_btn.wait_for(state="visible", timeout=15000)
+                        continue_btn = _find_continue_button(page)
+                        if continue_btn is None:
+                            raise Exception("Continue/Confirm/Next/"
+                                            "Submit button not found")
+                        continue_btn.wait_for(state="visible", timeout=5000)
                         with print_lock:
                             print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
                         _human_click(page, continue_btn)
-                        time.sleep(random.uniform(3.5, 6.0))  # Human waits for profile to load
+                        # Smart wait: proceed as soon as the login
+                        # cookie lands or the URL leaves the confirm
+                        # pages - no fixed sleep (max ~8s)
+                        for _ in range(16):
+                            try:
+                                if any(c["name"] == "c_user"
+                                       for c in page.context.cookies()):
+                                    break
+                                _cu = page.url.lower()
+                                if "confirm" not in _cu and \
+                                        "checkpoint" not in _cu:
+                                    break
+                            except Exception:
+                                pass
+                            time.sleep(0.5)
                         navigated = True
                     except Exception as e:
                         with print_lock:
@@ -634,7 +712,19 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                                 with print_lock:
                                     print(f"{CYAN}[Browser] Trying profile open...{WHITE}")
                                 page.goto(f"https://www.facebook.com/{c_user}", wait_until="domcontentloaded", timeout=30000)
-                                _human_pause(2.0, 3.0)
+                                # Smart settle: proceed as soon as
+                                # the URL leaves the verification
+                                # pages or stops changing (max ~4s)
+                                _last = None
+                                for _ in range(8):
+                                    _now = page.url.lower()
+                                    if "confirmemail" not in _now and \
+                                            "checkpoint" not in _now:
+                                        break
+                                    if _now == _last:
+                                        break
+                                    _last = _now
+                                    time.sleep(0.5)
                                 _final_url = page.url.lower()
                             with print_lock:
                                 print(f"{CYAN}[Browser] Profile URL: {page.url}{WHITE}")
@@ -645,7 +735,16 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                                 _profile_ok = True
                                 with print_lock:
                                     print(f"{GREEN}[Browser] Profile opened OK{WHITE}")
-                            time.sleep(random.choice([3, 4, 5]))  # Profile open: 3/4/5 sec random
+                            # Brief smart dwell on the profile:
+                            # exit as soon as the URL is stable
+                            # (max ~3s, typically ~1s)
+                            _last = None
+                            for _ in range(6):
+                                _now = page.url.lower()
+                                if _now == _last:
+                                    break
+                                _last = _now
+                                time.sleep(0.5)
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
