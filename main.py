@@ -84,6 +84,11 @@ def run_create():
     config_state["mode"] = "Browser (Playwright)" if browser_mode else "HTTP"
 
     if browser_mode:
+        # Proxies for the whole Mode 2 - exactly the HTTP mode
+        # logic: one get_proxy_list() load and one rotation cycle,
+        # shared by both setups (Browser and Android) below.
+        proxy_list = get_proxy_list(config_state, lambda: render_config(config_state))
+        proxy_cycle = create_proxy_cycle(proxy_list)
         # Setup choice inside FB Auto Create:
         # 1 = Browser Setup (the original flow below, untouched).
         # 2 = Android Setup (Facebook Lite app) - separate module;
@@ -108,7 +113,7 @@ def run_create():
             input(f"\n {WHITE}Press Enter to start Facebook Lite (Android) automation... ")
             logo()
             counter = Counter()
-            run_android_lite_mode(password_config, counter, numbers)
+            run_android_lite_mode(password_config, counter, numbers, proxy_list, proxy_cycle)
             input(f"\n {WHITE}Press Enter to exit... ")
             return
         # Browser mode: simplified flow (no device/server/proxy needed)
