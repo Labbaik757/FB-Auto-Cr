@@ -260,7 +260,7 @@ def _find_continue_button(page, timeout_s=12):
         time.sleep(0.5)
 
 
-def _fetch_otp_from_url(page, sms_url, timeout=20, interval=1):
+def _fetch_otp_from_url(page, sms_url, timeout=180, interval=5):
     """
     Fetch OTP via HTTP requests (simple API endpoint).
     Response is plain text; 'no' prefix means no OTP yet.
@@ -673,33 +673,32 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
         if on_confirm_page or "code" in page_content or "confirm" in page_content or "otp" in page_content:
             code = None
 
-            # No extra wait - go straight to resend (user: OTP comes fast)
-            # Smart resend+fetch: interleave resends with OTP checks
+            # Resend once and fetch; if no OTP arrives, resend
+            # a second time and fetch again (two rounds max).
+            # The code lands instantly on a resend, so each fetch
+            # is just a quick ~5s check - no long waiting window.
+            _human_pause(2.0, 3.0)
             code = None
-            if sms_url:
-                with print_lock:
-                    print(f"{CYAN}[Browser] Auto-fetching OTP from SMS link...{WHITE}")
-                for _round in range(3):
-                    _click_resend_twice(page)  # Click resend (up to 3x per round internally)
-                    # Check OTP for ~7s after each resend round
-                    code = _fetch_otp_from_url(page, sms_url, timeout=7, interval=1)
-                    if code:
-                        break
-                    if _round < 2:
-                        with print_lock:
-                            print(f"{YELLOW}[Browser] No OTP yet, resending... ({_round+2}/3){WHITE}")
-                if code:
-                    with print_lock:
-                        print(f"{GREEN}[Browser] OTP received: {code}{WHITE}")
-                else:
-                    with print_lock:
-                        print(f"{YELLOW}[Browser] Auto-fetch failed, manual input needed.{WHITE}")
-            else:
-                # No SMS URL: just do the resends
+            for _round in range(2):
                 resend_count = _click_resend_twice(page)
                 if resend_count == 0:
                     with print_lock:
-                        print(f"{YELLOW}[Browser] Resend button not found{WHITE}")
+                        print(f"{YELLOW}[Browser] Resend button not found, trying OTP fetch anyway{WHITE}")
+                if not sms_url:
+                    break
+                with print_lock:
+                    print(f"{CYAN}[Browser] Auto-fetching OTP from SMS link... ({_round+1}/2){WHITE}")
+                code = _fetch_otp_from_url(page, sms_url, timeout=5, interval=1)
+                if code:
+                    with print_lock:
+                        print(f"{GREEN}[Browser] OTP received: {code}{WHITE}")
+                    break
+                if _round == 0:
+                    with print_lock:
+                        print(f"{YELLOW}[Browser] No OTP yet - resending a second time{WHITE}")
+            if sms_url and not code:
+                with print_lock:
+                    print(f"{YELLOW}[Browser] Auto-fetch failed, manual input needed.{WHITE}")
 
             # Auto-fetch failed -> wait for MANUAL entry in the
             # browser. No timeout and no skip: the flow does not
