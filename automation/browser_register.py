@@ -350,7 +350,7 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
 
         # Navigate to Facebook registration
         page.goto("https://www.facebook.com/r.php", wait_until="domcontentloaded")
-        _human_pause(0.8, 1.5)  # form wait below is event-driven
+        _human_pause(1.5, 3.0)
 
         # Debug: check what page actually loaded
         with print_lock:
@@ -504,19 +504,20 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
             return {"status": "failed", "number": phone_number, "reason": "submit not found"}
 
         # Wait for result - either success (logged in) or OTP/code
-        # page. Smart wait: proceed the moment the page settles
-        # (URL off the reg page, code field, or login cookie) -
-        # no fixed sleep (max ~8s).
-        for _ in range(16):
+        # page. Human pause first, then poll for the REAL page
+        # state: the URL leaving the reg page, or the code field
+        # appearing. The c_user cookie is NOT a settle signal -
+        # Facebook sets it while the page is still on /reg, and
+        # trusting it made the check below fail the account and
+        # exit before the OTP page even rendered.
+        _human_pause(2.0, 3.0)
+        for _ in range(24):
             try:
                 _u = page.url.lower()
                 if "/reg" not in _u and "/r.php" not in _u:
                     break
                 if page.get_by_label("Confirmation code",
                                      exact=True).count() > 0:
-                    break
-                if any(c["name"] == "c_user"
-                       for c in page.context.cookies()):
                     break
             except Exception:
                 pass
@@ -544,6 +545,26 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                 print(f"{CYAN}[Browser] After navigation URL: {current_url}{WHITE}")
 
         try:
+            if ("/reg" in current_url or "/r.php" in current_url) and "checkpoint" not in current_url:
+                # Do not fail yet: Facebook often finishes
+                # navigating late. Poll for the page to actually
+                # leave the reg page (or show the code field)
+                # before declaring the submit failed (max ~10s).
+                for _ in range(20):
+                    try:
+                        _u2 = page.url.lower()
+                        if "/reg" not in _u2 and "/r.php" not in _u2:
+                            break
+                        if page.get_by_label("Confirmation code",
+                                             exact=True).count() > 0:
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                try:
+                    current_url = page.url
+                except Exception:
+                    current_url = ""
             if ("/reg" in current_url or "/r.php" in current_url) and "checkpoint" not in current_url:
                 try:
                     page.screenshot(path="fb_submit_debug.png")
@@ -592,6 +613,20 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
 
             with print_lock:
                 print(f"{GREEN}[Browser] SUCCESS: {c_user}{WHITE}")
+
+            # Open the profile and keep it on screen for 5
+            # seconds before finishing - the browser must not
+            # exit before the profile has opened.
+            try:
+                if f"/{c_user}" not in page.url.lower():
+                    page.goto(f"https://www.facebook.com/{c_user}",
+                              wait_until="domcontentloaded",
+                              timeout=30000)
+            except Exception:
+                pass
+            with print_lock:
+                print(f"{GREEN}[Browser] Profile open - holding 5s{WHITE}")
+            time.sleep(5)
 
             if counter:
                 counter.update("success")
@@ -671,16 +706,18 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                         with print_lock:
                             print(f"{CYAN}[Browser] Clicking Continue{WHITE}")
                         _human_click(page, continue_btn)
-                        # Smart wait: proceed as soon as the login
-                        # cookie lands or the URL leaves the confirm
-                        # pages - no fixed sleep (max ~8s)
-                        for _ in range(16):
+                        # Human pause, then wait for the REAL
+                        # navigation: a facebook.com URL that is no
+                        # longer a confirm/checkpoint page (the
+                        # cookie alone is not proof - it exists
+                        # before the click already). Max ~10s; the
+                        # checks below handle the stuck case.
+                        _human_pause(1.5, 2.5)
+                        for _ in range(20):
                             try:
-                                if any(c["name"] == "c_user"
-                                       for c in page.context.cookies()):
-                                    break
                                 _cu = page.url.lower()
-                                if "confirm" not in _cu and \
+                                if "facebook.com" in _cu and \
+                                        "confirm" not in _cu and \
                                         "checkpoint" not in _cu:
                                     break
                             except Exception:
@@ -735,16 +772,13 @@ def browser_create_account(page, phone_number, password, counter=None, sms_url=N
                                 _profile_ok = True
                                 with print_lock:
                                     print(f"{GREEN}[Browser] Profile opened OK{WHITE}")
-                            # Brief smart dwell on the profile:
-                            # exit as soon as the URL is stable
-                            # (max ~3s, typically ~1s)
-                            _last = None
-                            for _ in range(6):
-                                _now = page.url.lower()
-                                if _now == _last:
-                                    break
-                                _last = _now
-                                time.sleep(0.5)
+                            # Profile is open: keep it on screen
+                            # for 5 seconds before finishing -
+                            # the browser must not exit earlier.
+                            if _profile_ok:
+                                with print_lock:
+                                    print(f"{GREEN}[Browser] Profile open - holding 5s{WHITE}")
+                                time.sleep(5)
                         except Exception as e:
                             with print_lock:
                                 print(f"{YELLOW}[Browser] Profile open skipped: {e}{WHITE}")
@@ -847,17 +881,15 @@ def run_browser_mode(numbers, password_config, counter=None):
 
                     result = browser_create_account(page, number, password, counter, sms_url)
 
-                    if result["status"] == "success" or result.get("reason") == "profile_verification_pending":
-                        # Save to output (same format as HTTP version)
-                        # Also save verification-pending accounts so user can verify manually
+                    if result["status"] == "success":
+                        # Save to output (same format as HTTP version).
+                        # ONLY fully confirmed accounts whose profile
+                        # opened are saved - never pending ones.
                         from core.path_manager import get_output_dir
                         output_dir = get_output_dir()
                         os.makedirs(output_dir, exist_ok=True)
                         with open(os.path.join(output_dir, "browser_accounts.txt"), "a") as f:
                             f.write(result["result_line"] + "\n")
-                        if result.get("reason") == "profile_verification_pending":
-                            with print_lock:
-                                print(f"{YELLOW}[Browser] Saved for manual verification{WHITE}")
 
                 except Exception as e:
                     with print_lock:
@@ -880,7 +912,7 @@ def run_browser_mode(numbers, password_config, counter=None):
                         # Simple: re-run browser_create_account once more
                         try:
                             result = browser_create_account(page, number, password, counter, sms_url)
-                            if result["status"] == "success" or result.get("reason") == "profile_verification_pending":
+                            if result["status"] == "success":
                                 from core.path_manager import get_output_dir
                                 output_dir = get_output_dir()
                                 os.makedirs(output_dir, exist_ok=True)
