@@ -1,6 +1,6 @@
 """DP Apply (TEST VERSION) - profile pictures for IDs without a DP.
 
-Run via main.py modes 2 and 3. Reads output/browser_accounts.txt (the same
+Run via main.py mode 5. Reads output/browser_accounts.txt (the same
 file every mode writes/reads through core.path_manager), opens each
 account, and applies a photorealistic DP only where the ID has none.
 IDs that already have a DP are skipped, never overwritten.
@@ -10,11 +10,11 @@ browser_register), a gap between accounts, one failure never stops the
 batch, a checkpoint skips the account with no retry (stand-down rule).
 
 TEST-VERSION HONESTY: the Facebook dialog selectors below are
-best-effort and NOT live-verified yet. Run it from Mode 2 or Mode 3 on ONE account first
+best-effort and NOT live-verified yet. Run mode 5 on ONE account first
 and report what breaks; every failure is reported honestly, never
-faked as success. No Pollinations key is required; if
-POLLINATIONS_API_KEY is set it is sent with requests, never
-stored in the repo.
+faked as success. Pollinations setup: key set -> keyed gen endpoint;
+no key -> anonymous legacy endpoint (shared pool). The key comes only
+from POLLINATIONS_API_KEY, never from the repo.
 """
 
 import os
@@ -27,7 +27,12 @@ from automation.browser_register import (
     _human_pause,
     _human_type,
 )
-from automation.dp_generate import build_prompt, generate_png
+from automation.dp_generate import (
+    JPEG_MAGIC,
+    PNG_MAGIC,
+    build_prompt,
+    generate_png,
+)
 from core.path_manager import get_output_dir
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
 
@@ -108,21 +113,37 @@ def read_profile_name(page):
     return ""
 
 
-def _pic_locator(page):
-    """First locator that finds the profile picture image, else None."""
-    candidates = [
+def _pic_candidates(page):
+    return [
         page.locator('img[alt="Profile picture"]').first,
         page.get_by_role("img", name="Profile picture").first,
         page.locator('a[aria-label="Profile picture"] img').first,
         page.locator('div[aria-label="Profile picture"] img').first,
     ]
-    for loc in candidates:
+
+
+def _pic_locator(page):
+    """First locator that finds the profile picture image, else None."""
+    for loc in _pic_candidates(page):
         try:
             if loc.count() > 0:
                 return loc
         except Exception:
             continue
     return None
+
+
+def _wait_for_pic(page):
+    """Wait until some profile-picture candidate attaches. FB renders
+    the header asynchronously; an instant count() misses a picture that
+    is still loading. True if found, else False."""
+    for loc in _pic_candidates(page):
+        try:
+            loc.wait_for(state="attached", timeout=5000)
+            return True
+        except Exception:
+            continue
+    return False
 
 
 def _pic_src(page):
@@ -171,11 +192,19 @@ def apply_dp_on_page(page, photo_path):
     before = _pic_src(page)
     if before is None:
         return {"ok": False, "detail": "profile picture element not found"}
-    # Open the picture editor: edit button first, else the picture itself.
+    # Hover the picture first: the edit control only appears on hover.
+    # Never click the picture itself: that opens the photo viewer.
+    try:
+        loc = _pic_locator(page)
+        if loc is not None:
+            loc.hover(timeout=5000)
+    except Exception:
+        pass
+    _human_pause(0.5, 1.5)
+    # Open the picture editor via its edit control.
     opened = _try_click(page, [
         page.get_by_role("button", name="Edit profile picture").first,
         page.get_by_role("button", name="Update profile picture").first,
-        _pic_locator(page),
     ])
     if not opened:
         return {"ok": False, "detail": "edit control not found"}
@@ -250,6 +279,21 @@ def _seed_for(uid):
     return sum(uid.encode()) % 1000000
 
 
+def _existing_dp(dp_dir, uid):
+    """Path of an already-generated valid image for this uid, else None.
+    Reusing it saves free-pool quota on reruns."""
+    for ext, magic in ((".png", PNG_MAGIC), (".jpg", JPEG_MAGIC)):
+        path = os.path.join(dp_dir, uid + ext)
+        try:
+            with open(path, "rb") as f:
+                head = f.read(len(magic))
+            if head == magic:
+                return path
+        except Exception:
+            continue
+    return None
+
+
 def process_account(pw, account, api_key, dp_dir, headless=False):
     """Login -> read name -> skip if DP exists -> else generate + apply.
     Returns dict(uid, name, ok, skipped, via, detail)."""
@@ -284,9 +328,23 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
                         "skipped": False, "via": via,
                         "detail": "login failed"}
         name = read_profile_name(page)
+        if not _wait_for_pic(page):
+            return {"uid": uid, "name": name, "ok": False,
+                    "skipped": False, "via": via,
+                    "detail": "profile picture element not found"}
         if has_custom_dp(page):
             return {"uid": uid, "name": name, "ok": True, "skipped": True,
                     "via": via, "detail": "already has DP - skipped"}
+        existing = _existing_dp(dp_dir, uid)
+        if existing:
+            res = apply_dp_on_page(page, existing)
+            res["uid"] = uid
+            res["name"] = name
+            res["via"] = via
+            res["skipped"] = False
+            if res["ok"]:
+                res["detail"] = "applied from existing file"
+            return res
         prompt = build_prompt(name or f"User {uid}", "", _seed_for(uid))
         gen = generate_png(prompt,
                            os.path.join(dp_dir, uid),
@@ -305,15 +363,18 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
         browser.close()
 
 
-# --- interactive entry (main.py modes 2 and 3) ---
+# --- interactive entry (main.py mode 5) ---
 
 
 def run_dp_mode():
     print(f"{CYAN}=== DP Apply (test version) ==={WHITE}")
     api_key = os.environ.get("POLLINATIONS_API_KEY", "").strip()
-    if not api_key:
-        print(f"{YELLOW}No Pollinations key set - generating anonymously "
-              f"(no key needed).{WHITE}")
+    if api_key:
+        print(f"{CYAN}Pollinations key set - using keyed endpoint.{WHITE}")
+    else:
+        print(f"{YELLOW}No Pollinations key set - using anonymous "
+              f"endpoint (shared pool, may hit limits). Set "
+              f"POLLINATIONS_API_KEY for your own quota.{WHITE}")
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
     if not accounts:
@@ -350,5 +411,11 @@ def run_dp_mode():
                 failed += 1
                 print(f"{RED}[DP] {label}: FAILED - {res['detail']}"
                       f"{WHITE}")
+                if "402" in res["detail"]:
+                    print(f"{RED}[DP] Anonymous free pool exhausted - "
+                          f"stopping the batch. Set a free Pollinations "
+                          f"key or retry later; already-applied DPs are "
+                          f"kept.{WHITE}")
+                    break
     print(f"{CYAN}Done: applied {applied}, skipped {skipped}, "
           f"failed {failed}. DPs saved in {dp_dir}{WHITE}")
