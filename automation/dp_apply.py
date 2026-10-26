@@ -12,8 +12,9 @@ batch, a checkpoint skips the account with no retry (stand-down rule).
 TEST-VERSION HONESTY: the Facebook dialog selectors below are
 best-effort and NOT live-verified yet. Run it from Mode 2 or Mode 3 on ONE account first
 and report what breaks; every failure is reported honestly, never
-faked as success. The Pollinations key comes from the
-POLLINATIONS_API_KEY environment variable, never from the repo.
+faked as success. No Pollinations key is required; if
+POLLINATIONS_API_KEY is set it is sent with requests, never
+stored in the repo.
 """
 
 import os
@@ -311,10 +312,8 @@ def run_dp_mode():
     print(f"{CYAN}=== DP Apply (test version) ==={WHITE}")
     api_key = os.environ.get("POLLINATIONS_API_KEY", "").strip()
     if not api_key:
-        print(f"{RED}POLLINATIONS_API_KEY is not set.{WHITE}")
-        print(f"{YELLOW}Get a free key at enter.pollinations.ai, set it "
-              f"as an environment variable, then run Mode 2 or Mode 3 again.{WHITE}")
-        return
+        print(f"{YELLOW}No Pollinations key set - generating anonymously "
+              f"(no key needed).{WHITE}")
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
     if not accounts:
