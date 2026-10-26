@@ -1,8 +1,8 @@
 """DP image generation via the Pollinations free image API (TEST VERSION).
 
-Plain HTTP, stdlib only. The API key comes from the POLLINATIONS_API_KEY
-environment variable and is never stored in the repo. Anonymous calls
-return HTTP 401, so a free key (enter.pollinations.ai) is required.
+Plain HTTP, stdlib only. No key is required: anonymous calls work on
+this endpoint. If POLLINATIONS_API_KEY is set it is sent with requests;
+it is never stored in the repo.
 """
 
 import random
@@ -11,7 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE_URL = "https://gen.pollinations.ai"
+BASE_URL = "https://image.pollinations.ai"
 MODEL = "flux"
 WIDTH = 1024
 HEIGHT = 1024
@@ -72,14 +72,12 @@ def generate_png(prompt, out_path, seed=1, api_key=None, timeout=120,
     Retries on HTTP 5xx / timeouts. Rejects non-image bodies (HTML error
     pages) instead of saving them as a fake PNG.
     """
-    if not api_key:
-        return {"ok": False, "path": None, "bytes": 0, "attempts": 0,
-                "error": "POLLINATIONS_API_KEY not set"}
-    q = urllib.parse.quote(prompt)
-    url = (f"{base_url}/image/{q}"
-           f"?model={MODEL}&width={WIDTH}&height={HEIGHT}&seed={seed}")
-    headers = {"User-Agent": "fb-auto-cr-dp/1.0",
-               "Authorization": f"Bearer {api_key}"}
+                     q = urllib.parse.quote(prompt)
+    url = (f"{base_url}/prompt/{q}"
+           f"?model={MODEL}&width={WIDTH}&height={HEIGHT}&seed={seed}&nologo=true")
+    headers = {"User-Agent": "fb-auto-cr-dp/1.0"}
+if api_key:
+    headers["Authorization"] = f"Bearer {api_key}"
     last_error = ""
     for attempt in range(1, max_attempts + 1):
         try:
