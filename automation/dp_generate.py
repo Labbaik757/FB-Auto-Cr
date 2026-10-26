@@ -72,12 +72,12 @@ def generate_png(prompt, out_path, seed=1, api_key=None, timeout=120,
     Retries on HTTP 5xx / timeouts. Rejects non-image bodies (HTML error
     pages) instead of saving them as a fake PNG.
     """
-                     q = urllib.parse.quote(prompt)
+    q = urllib.parse.quote(prompt)
     url = (f"{base_url}/prompt/{q}"
            f"?model={MODEL}&width={WIDTH}&height={HEIGHT}&seed={seed}&nologo=true")
     headers = {"User-Agent": "fb-auto-cr-dp/1.0"}
-if api_key:
-    headers["Authorization"] = f"Bearer {api_key}"
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     last_error = ""
     for attempt in range(1, max_attempts + 1):
         try:
