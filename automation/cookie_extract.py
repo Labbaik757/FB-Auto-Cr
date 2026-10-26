@@ -8,7 +8,9 @@ mode's code - only the project's shared infra (paths, colors).
 Input: uid|password per line (extra fields, if any, are ignored -
 every ID is freshly logged in, so input cookies are never used).
 Default input file: output/cookie_input.txt - any path may be typed
-at the prompt instead. Output (fixed): output/cookies_output.txt.
+at the prompt instead. If the input file does not exist, Mode 5
+creates an empty one and asks you to fill it, instead of failing.
+Output (fixed): output/cookies_output.txt.
 Only successes are saved; the file is truncated at start and each
 success is appended immediately, so partial progress survives an
 interruption.
@@ -126,6 +128,20 @@ def _login(page, uid, password):
     _pause(2.0, 3.0)
 
 
+def _ensure_input_file(path):
+    """True if the input file already exists. If missing, create an
+    empty one (plus parent dirs) and return False, so the caller can
+    tell the user to fill it and rerun."""
+    if os.path.exists(path):
+        return True
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8"):
+        pass
+    return False
+
+
 def run_cookie_mode():
     """Standalone cookie extraction. Returns result list."""
     raw = input(f"Input file (uid|password per line) "
@@ -141,6 +157,11 @@ def run_cookie_mode():
     except ValueError:
         gap = DEFAULT_GAP
     gap = max(0, min(300, gap))
+    if not _ensure_input_file(in_path):
+        print(f"{YELLOW}Input file not found - created empty {in_path}. "
+              f"Fill it with one uid|password per line, then run Mode 5 "
+              f"again.{WHITE}")
+        return []
     try:
         accounts = parse_input_file(in_path)
     except FileNotFoundError:
