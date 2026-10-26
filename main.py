@@ -46,8 +46,9 @@ def run_create():
     print(f" {GREEN}[{RED}02{GREEN}] FB Auto Create {WHITE}(Playwright, human-like, slower)")
     print(f" {GREEN}[{RED}03{GREEN}] Facebook Automation {WHITE}(Reviews, marketplace & more)")
     print(f" {GREEN}[{RED}04{GREEN}] Outlook Email {WHITE}(Create Outlook/Hotmail accounts)")
+    print(f" {GREEN}[{RED}05{GREEN}] Cookie Extract {WHITE}(Login IDs, save uid+password+cookies)")
     print(f"{LINE}")
-    mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2/3/4) [1] {EKL} ").strip()
+    mode_choice = input(f" {GREEN}[{RED}●{GREEN}] Select Mode (1/2/3/4/5) [1] {EKL} ").strip()
     if mode_choice == "4":
         # Outlook Email Creation mode - WITH proxy support
         # Proxy source priority: proxies.txt (auto) > setting.json > manual prompt
@@ -71,6 +72,14 @@ def run_create():
         input(f"\n {WHITE}Press Enter to exit... ")
         return
 
+        if mode_choice == "5":
+            # Cookie Extract: login IDs, save uid+password+cookies
+            from automation.cookie_extract import run_cookie_mode
+            config_state["mode"] = "Cookie Extract"
+            render_config(config_state)
+            run_cookie_mode()
+            input(f"\n {WHITE}Press Enter to exit... ")
+            return
     if mode_choice == "3":
         # Facebook Automation: reviews, marketplace & more (does not touch mode 1/2)
         from automation.fb_automation import run_reviews_mode
