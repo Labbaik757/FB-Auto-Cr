@@ -45,10 +45,25 @@ def _pause(min_s, max_s):
     time.sleep(random.uniform(min_s, max_s))
 
 
-def _type(page, selector, text):
-    el = page.locator(selector).first
-    el.click(timeout=10000)
-    el.press_sequentially(text, delay=70)
+def _type(page, selectors, text):
+    """Type into the first selector that attaches. The login form's
+    ids vary (and a page can load without the form at all, e.g. an
+    error page), so a single hard selector must never raise and kill
+    the batch. Returns True if typed, else False. Falls back to fill
+    when click-typing is blocked by an overlay."""
+    for sel in selectors:
+        try:
+            el = page.locator(sel).first
+            el.wait_for(state="attached", timeout=5000)
+            try:
+                el.click(timeout=5000)
+                el.press_sequentially(text, delay=70)
+            except Exception:
+                el.fill(text, timeout=5000)
+            return True
+        except Exception:
+            continue
+    return False
 
 
 def _click(page, locators):
@@ -112,13 +127,21 @@ def _checkpoint(page):
     return "checkpoint" in text or "confirm your identity" in text
 
 
+EMAIL_SELECTORS = ["#email", "input[name='email']"]
+PASS_SELECTORS = ["#pass", "input[name='pass']", "input[type='password']"]
+
+
 def _login(page, uid, password):
-    """Password login for one already-created ID."""
+    """Password login for one already-created ID. Raises RuntimeError
+    if the login form never appears, so the caller can record that
+    account as failed and continue with the next one."""
     page.goto("https://www.facebook.com/login", timeout=60000)
     _pause(1.0, 2.0)
-    _type(page, "#email", uid)
+    if not _type(page, EMAIL_SELECTORS, uid):
+        raise RuntimeError("login form not found")
     _pause(0.5, 1.5)
-    _type(page, "#pass", password)
+    if not _type(page, PASS_SELECTORS, password):
+        raise RuntimeError("login form not found")
     _pause(0.5, 1.0)
     _click(page, [
         page.get_by_role("button", name="Log in").first,
@@ -217,6 +240,11 @@ def run_cookie_mode():
                                    "detail": "login failed"}
                             break
                         time.sleep(2)
+                except Exception as e:
+                    # One account's unexpected failure must never kill
+                    # the batch: record it and move to the next account.
+                    res = {"uid": uid, "ok": False, "cookies": "",
+                           "detail": f"login error: {e}"}
                 finally:
                     ctx.close()
                 res["password"] = account["password"]
