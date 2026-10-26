@@ -1,6 +1,6 @@
 """DP Apply (TEST VERSION) - profile pictures for IDs without a DP.
 
-Run via main.py mode 5. Reads output/browser_accounts.txt (the same
+Run via main.py modes 2 and 3. Reads output/browser_accounts.txt (the same
 file every mode writes/reads through core.path_manager), opens each
 account, and applies a photorealistic DP only where the ID has none.
 IDs that already have a DP are skipped, never overwritten.
@@ -10,7 +10,7 @@ browser_register), a gap between accounts, one failure never stops the
 batch, a checkpoint skips the account with no retry (stand-down rule).
 
 TEST-VERSION HONESTY: the Facebook dialog selectors below are
-best-effort and NOT live-verified yet. Run mode 5 on ONE account first
+best-effort and NOT live-verified yet. Run it from Mode 2 or Mode 3 on ONE account first
 and report what breaks; every failure is reported honestly, never
 faked as success. The Pollinations key comes from the
 POLLINATIONS_API_KEY environment variable, never from the repo.
@@ -304,7 +304,7 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
         browser.close()
 
 
-# --- interactive entry (main.py mode 5) ---
+# --- interactive entry (main.py modes 2 and 3) ---
 
 
 def run_dp_mode():
@@ -313,7 +313,7 @@ def run_dp_mode():
     if not api_key:
         print(f"{RED}POLLINATIONS_API_KEY is not set.{WHITE}")
         print(f"{YELLOW}Get a free key at enter.pollinations.ai, set it "
-              f"as an environment variable, then run mode 5 again.{WHITE}")
+              f"as an environment variable, then run Mode 2 or Mode 3 again.{WHITE}")
         return
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
