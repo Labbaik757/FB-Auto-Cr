@@ -76,6 +76,10 @@ def run_create():
         from automation.fb_automation import run_reviews_mode
         config_state["mode"] = "Facebook Automation"
         render_config(config_state)
+        _dp = input(f"\n {GREEN}[{RED}●{GREEN}] Apply DPs to accounts first? (y/n) [n] {EKL} ").strip().lower()
+        if _dp == "y":
+            from automation.dp_apply import run_dp_mode
+            run_dp_mode()
         run_reviews_mode()
         input(f"\n {WHITE}Press Enter to exit... ")
         return
@@ -132,6 +136,10 @@ def run_create():
         logo()
         counter = Counter()
         run_browser_mode(numbers, password_config, counter)
+        _dp = input(f"\n {GREEN}[{RED}●{GREEN}] Apply DPs to these IDs now? (y/n) [n] {EKL} ").strip().lower()
+        if _dp == "y":
+            from automation.dp_apply import run_dp_mode
+            run_dp_mode()
         input(f"\n {WHITE}Press Enter to exit... ")
         return
 
