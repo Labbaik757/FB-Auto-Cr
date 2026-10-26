@@ -100,6 +100,27 @@ def has_c_user(cookies):
     return any(c["name"] == "c_user" and c["value"] for c in cookies)
 
 
+def _is_logged_in(page, ctx):
+    """True only for a real logged-in session. Cookie presence alone
+    proves nothing: dead cookies stay in the jar, and a logged-out
+    profile page still shows the person's name in h1 - so the old
+    check (c_user + name) passed for dead sessions and the password
+    fallback never ran. A logged-out page always shows a Log in
+    control; a logged-in session never does - that is the
+    discriminator."""
+    if not has_c_user(ctx.cookies()):
+        return False
+    if not read_profile_name(page):
+        return False
+    for role in ("link", "button"):
+        try:
+            if page.get_by_role(role, name="Log in").first.is_visible():
+                return False
+        except Exception:
+            pass
+    return True
+
+
 # --- profile reading ---
 
 
@@ -327,8 +348,7 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
                     "detail": "profile page did not load"}
         _human_pause(1.0, 2.0)
         via = "cookie"
-        logged_in = has_c_user(ctx.cookies()) and bool(
-            read_profile_name(page))
+        logged_in = _is_logged_in(page, ctx)
         if not logged_in:
             # Cookie dead (common for old IDs) -> password fallback.
             via = "password"
@@ -342,8 +362,7 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
                         "skipped": False, "via": via,
                         "detail": "profile page did not load"}
             _human_pause(1.0, 2.0)
-            if not (has_c_user(ctx.cookies())
-                    and bool(read_profile_name(page))):
+            if not _is_logged_in(page, ctx):
                 return {"uid": uid, "name": "", "ok": False,
                         "skipped": False, "via": via,
                         "detail": "login failed"}
