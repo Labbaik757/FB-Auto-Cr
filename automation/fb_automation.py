@@ -24,7 +24,7 @@ from automation.browser_register import (
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
 from ui.display import print_lock
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+from core.path_manager import get_output_dir, get_base_storage_dir
 
 
 def read_lines(path):
@@ -272,8 +272,8 @@ def submit_review(page, page_url, review_text):
 def run_reviews_mode():
     print(f"{CYAN}=== Fb Reviews Automation ==={WHITE}")
 
-    accounts = read_lines(os.path.join(BASE, "output", "browser_accounts.txt"))
-    reviews = read_lines(os.path.join(BASE, "reviews.txt"))
+    accounts = read_lines(os.path.join(get_output_dir(), "browser_accounts.txt"))
+    reviews = read_lines(os.path.join(get_base_storage_dir(), "reviews.txt"))
 
     if not accounts:
         print(f"{RED}No accounts in output/browser_accounts.txt{WHITE}")
@@ -291,7 +291,7 @@ def run_reviews_mode():
     # Gemini expands if needed > available
     if need > len(reviews):
         print(f"{CYAN}Need {need}, have {len(reviews)} - asking Gemini for variations...{WHITE}")
-        _key_file = os.path.join(BASE, "gemini_api_key.txt")
+        _key_file = os.path.join(get_base_storage_dir(), "gemini_api_key.txt")
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key and os.path.exists(_key_file):
             with open(_key_file) as _kf:
