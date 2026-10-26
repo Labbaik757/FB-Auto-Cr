@@ -294,6 +294,20 @@ def _existing_dp(dp_dir, uid):
     return None
 
 
+def _goto_profile(page, url, timeout=30000):
+    """Load a profile page without ever raising. Facebook's 'load'
+    event can hang on slow assets, so wait only for DOM content and
+    retry once. Returns True if the page loaded, else False - the
+    caller turns False into a per-account failure, never a crash."""
+    for _ in range(2):
+        try:
+            page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def process_account(pw, account, api_key, dp_dir, headless=False):
     """Login -> read name -> skip if DP exists -> else generate + apply.
     Returns dict(uid, name, ok, skipped, via, detail)."""
@@ -307,7 +321,10 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
         if cookies:
             ctx.add_cookies(cookies)
         page = ctx.new_page()
-        page.goto(FB_PROFILE_URL.format(uid=uid), timeout=30000)
+        if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
+            return {"uid": uid, "name": "", "ok": False,
+                    "skipped": False, "via": "cookie",
+                    "detail": "profile page did not load"}
         _human_pause(1.0, 2.0)
         via = "cookie"
         logged_in = has_c_user(ctx.cookies()) and bool(
@@ -320,7 +337,10 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
                 return {"uid": uid, "name": "", "ok": False,
                         "skipped": False, "via": via,
                         "detail": "checkpoint - skipped, no retry"}
-            page.goto(FB_PROFILE_URL.format(uid=uid), timeout=30000)
+            if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
+                return {"uid": uid, "name": "", "ok": False,
+                        "skipped": False, "via": via,
+                        "detail": "profile page did not load"}
             _human_pause(1.0, 2.0)
             if not (has_c_user(ctx.cookies())
                     and bool(read_profile_name(page))):
@@ -396,8 +416,15 @@ def run_dp_mode():
         for i, account in enumerate(accounts):
             if i > 0:
                 time.sleep(gap)
-            res = process_account(pw, account, api_key, dp_dir,
-                                  headless=False)
+            try:
+                res = process_account(pw, account, api_key, dp_dir,
+                                      headless=False)
+            except Exception as e:
+                # One account's unexpected failure must never kill
+                # the batch: record it and move to the next account.
+                res = {"uid": account["uid"], "name": "",
+                       "ok": False, "skipped": False, "via": "",
+                       "detail": f"unexpected error: {e}"}
             label = res.get("name") or res["uid"]
             if res.get("skipped"):
                 skipped += 1
