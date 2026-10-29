@@ -27,6 +27,12 @@ LOGIN STATE MACHINE - this is the only logic kept:
   that step in the visible browser himself; the moment the step
   is done and the session cookies appear, the same cookie poll
   detects it automatically and the code moves forward from there.
+- OTP is a named STOP point inside that rule: if an OTP is asked
+  for an ID's login, the code STOPS there in the visible browser
+  (no time limit, no terminal input, no auto-fill by the tool).
+  The user enters the OTP himself; the moment the OTP is accepted
+  and c_user + xs appear, the cookie poll detects login by itself
+  and the code moves on to the next work.
 - A bare checkpoint page is the other stop: skip that account,
   no retry, batch moves on.
 - The tool never solves, detects, or fixes Meta's verification
@@ -129,6 +135,22 @@ def _checkpoint(page):
     return "checkpoint" in text
 
 
+def _otp_present(page):
+    """OTP STOP point only - detection, never solving or filling.
+    If an OTP code field / OTP wording is on the page, the caller
+    stays there for the user to enter it himself."""
+    try:
+        if page.locator('input[name="approvals_code"]').count() > 0:
+            return True
+    except Exception:
+        pass
+    text = _body_text(page)
+    return any(m in text for m in (
+        "login code", "verification code", "enter the code",
+        "enter code", "two-factor authentication",
+    ))
+
+
 EMAIL_SELECTORS = ["#email", "input[name='email']"]
 PASS_SELECTORS = ["#pass", "input[name='pass']", "input[type='password']"]
 
@@ -212,8 +234,11 @@ def run_cookie_mode():
                 try:
                     _login(page, uid, account["password"])
                     res = None
+                    otp_noted = False
                     # No time limit after login: poll until the
                     # session appears, or a checkpoint stops it.
+                    # An OTP page is a STOP point: stay there for
+                    # the user to enter it, never solve or fill it.
                     while True:
                         cookies = ctx.cookies()
                         if _has_c_user(cookies) and _has_xs(cookies):
@@ -225,6 +250,11 @@ def run_cookie_mode():
                             res = {"uid": uid, "ok": False, "cookies": "",
                                    "detail": "checkpoint - skipped, no retry"}
                             break
+                        if _otp_present(page) and not otp_noted:
+                            print(f"{YELLOW}[Cookie] OTP asked for {uid} "
+                                  f"- stopped in browser, enter it "
+                                  f"yourself, waiting...{WHITE}")
+                            otp_noted = True
                         time.sleep(2)
                 except Exception as e:
                     # One account's unexpected failure must never kill
