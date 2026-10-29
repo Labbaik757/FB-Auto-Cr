@@ -15,20 +15,30 @@ Only successes are saved; the file is truncated at start and each
 success is appended immediately, so partial progress survives an
 interruption.
 
-OTP during login: the visible browser WAITS there until the
-user enters it in the browser. The moment the OTP scene is gone and
-a session exists, the run continues automatically - no terminal input
-is needed. A bare checkpoint page still skips the account with no retry.
-An unsolved OTP challenge times out after 600s and the batch moves on.
-
-NOTE: Meta's own verification handling is REMOVED completely
-from this file. Meta asks for it for some IDs and not for others,
-at its own discretion - that is Meta's behaviour, not a tool bug
-to fix. The tool does not detect, wait for, or solve it, and it
-does not appear in the challenge markers below. If Meta shows it,
-that account simply does not complete in this run and the batch
-moves on. A cookie set is only a success when BOTH c_user and xs
-are present.
+LOGIN STATE MACHINE - this is the only logic kept:
+- After the password login, there is NO time limit. The code polls
+  the browser's cookies every 2s and the moment BOTH c_user and xs
+  appear, it knows by itself that the ID is logged in and moves on
+  to the next work (save cookies, next account) - no timer, no
+  terminal input, no fixed wait.
+- If Meta shows its own verification step for an ID, that page is
+  the STOP point: the code stays there, it does not fail the
+  account and does not try to solve anything. The user completes
+  that step in the visible browser himself; the moment the step
+  is done and the session cookies appear, the same cookie poll
+  detects it automatically and the code moves forward from there.
+- OTP is a named STOP point inside that rule: if an OTP is asked
+  for an ID's login, the code STOPS there in the visible browser
+  (no time limit, no terminal input, no auto-fill by the tool).
+  The user enters the OTP himself; the moment the OTP is accepted
+  and c_user + xs appear, the cookie poll detects login by itself
+  and the code moves on to the next work.
+- A bare checkpoint page is the other stop: skip that account,
+  no retry, batch moves on.
+- The tool never solves, detects, or fixes Meta's verification
+  itself - Meta asks for it for whichever ID it wants, at its own
+  discretion. A cookie set is only a success when BOTH c_user and
+  xs are present.
 """
 
 import os
@@ -40,12 +50,6 @@ from playwright.sync_api import sync_playwright
 from core.path_manager import get_base_storage_dir, get_output_dir
 from ui.colors import CYAN, GREEN, RED, WHITE, YELLOW
 
-CHALLENGE_MARKERS = (
-    "login code", "two-factor",
-    "approvals_code", "verification code", "enter the code",
-    "confirm your identity",
-)
-CHALLENGE_TIMEOUT = 600
 DEFAULT_INPUT = "output/cookie_input.txt"
 DEFAULT_GAP = 60
 
@@ -124,24 +128,27 @@ def _body_text(page):
         return ""
 
 
-def _challenge_present(page):
-    """OTP scene only. A bare checkpoint page (no OTP markers)
-    is NOT a challenge - it skips. Meta's own verification is
-    deliberately NOT detected here at all."""
+def _checkpoint(page):
+    if "checkpoint" in page.url.lower():
+        return True
+    text = _body_text(page)
+    return "checkpoint" in text
+
+
+def _otp_present(page):
+    """OTP STOP point only - detection, never solving or filling.
+    If an OTP code field / OTP wording is on the page, the caller
+    stays there for the user to enter it himself."""
     try:
         if page.locator('input[name="approvals_code"]').count() > 0:
             return True
     except Exception:
         pass
     text = _body_text(page)
-    return any(m in text for m in CHALLENGE_MARKERS)
-
-
-def _checkpoint(page):
-    if "checkpoint" in page.url.lower():
-        return True
-    text = _body_text(page)
-    return "checkpoint" in text or "confirm your identity" in text
+    return any(m in text for m in (
+        "login code", "verification code", "enter the code",
+        "enter code", "two-factor authentication",
+    ))
 
 
 EMAIL_SELECTORS = ["#email", "input[name='email']"]
@@ -226,37 +233,28 @@ def run_cookie_mode():
                 page = ctx.new_page()
                 try:
                     _login(page, uid, account["password"])
-                    start = time.time()
-                    waited = False
                     res = None
+                    otp_noted = False
+                    # No time limit after login: poll until the
+                    # session appears, or a checkpoint stops it.
+                    # An OTP page is a STOP point: stay there for
+                    # the user to enter it, never solve or fill it.
                     while True:
                         cookies = ctx.cookies()
-                        if (_has_c_user(cookies) and _has_xs(cookies)
-                                and not _challenge_present(page)):
+                        if _has_c_user(cookies) and _has_xs(cookies):
                             res = {"uid": uid, "ok": True,
                                    "cookies": serialize_cookies(cookies),
                                    "detail": "cookies extracted"}
                             break
-                        if _challenge_present(page):
-                            if not waited:
-                                print(f"{YELLOW}[Cookie] Challenge in browser "
-                                      f"for {uid} - solve it, waiting...{WHITE}")
-                                waited = True
-                            if time.time() - start > CHALLENGE_TIMEOUT:
-                                res = {"uid": uid, "ok": False, "cookies": "",
-                                       "detail": "challenge not solved in time "
-                                               "- moved on"}
-                                break
-                            time.sleep(2)
-                            continue
                         if _checkpoint(page):
                             res = {"uid": uid, "ok": False, "cookies": "",
                                    "detail": "checkpoint - skipped, no retry"}
                             break
-                        if time.time() - start > 15:
-                            res = {"uid": uid, "ok": False, "cookies": "",
-                                   "detail": "login failed"}
-                            break
+                        if _otp_present(page) and not otp_noted:
+                            print(f"{YELLOW}[Cookie] OTP asked for {uid} "
+                                  f"- stopped in browser, enter it "
+                                  f"yourself, waiting...{WHITE}")
+                            otp_noted = True
                         time.sleep(2)
                 except Exception as e:
                     # One account's unexpected failure must never kill
