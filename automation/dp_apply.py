@@ -467,7 +467,8 @@ def _generate_dp(prompt, out_path, seed, pollinations_key):
         print(f"{YELLOW}[DP] Gemini failed ({gen['error'][:120]}) - "
               f"falling back to Pollinations.{WHITE}")
     gen = generate_png(prompt, out_path, seed=seed,
-                       api_key=pollinations_key)
+                       api_key=pollinations_key,
+                       timeout=60, max_attempts=2)
     gen["source"] = "pollinations"
     return gen
 

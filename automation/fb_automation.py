@@ -144,7 +144,11 @@ def fb_login(context, page, cookie_str):
 def submit_review(page, page_url, review_text):
     """Submit a page review. VERIFIED selectors (2026-10-13 live test).
     Flow: page?sk=reviews -> Yes button -> wait composer -> textbox -> Post.
-    Returns True only if submission is verified."""
+    Returns 'verified' only when the review is live on the page;
+    'submitted' when the dialog closed but the review was not found
+    live; 'already' when the account had already reviewed (nothing
+    new posted); False on failure. Only 'verified' counts in the
+    terminal DONE total."""
     # Extract page ID and go directly to reviews tab
     import re as _re
     _m = _re.search(r'id=(\d+)', page_url)
@@ -165,7 +169,7 @@ def submit_review(page, page_url, review_text):
         if "recommends" in _body:
             with print_lock:
                 print(f"{YELLOW}[Reviews] Already reviewed - skipping{WHITE}")
-            return True  # not a failure
+            return "already"  # nothing new posted: NOT counted
         with print_lock:
             print(f"{RED}[Reviews] Yes button not found and no existing review{WHITE}")
         return False
@@ -308,10 +312,11 @@ def submit_review(page, page_url, review_text):
     if _verified:
         with print_lock:
             print(f"{GREEN}[Reviews] VERIFIED: review live on page{WHITE}")
-    else:
-        with print_lock:
-            print(f"{GREEN}[Reviews] Submitted (dialog closed){WHITE}")
-    return True
+        return "verified"
+    with print_lock:
+        print(f"{YELLOW}[Reviews] Submitted (dialog closed) - NOT "
+              f"verified on page{WHITE}")
+    return "submitted"
 
 def run_reviews_mode():
     print(f"{CYAN}=== Fb Reviews Automation ==={WHITE}")
@@ -398,12 +403,16 @@ def run_reviews_mode():
             pass
 
         done = 0
+        unverified = 0
+        already = 0
+        failed = 0
         for acc_line, review in test_pairs:
             parts = acc_line.split("|")
             uid = parts[0]
             cookie_str = parts[2] if len(parts) > 2 else ""
             if not cookie_str:
                 print(f"{RED}[Reviews] No cookies for {uid}, skipping{WHITE}")
+                failed += 1
                 continue
             print(f"\n{CYAN}--- Account: {uid} ---{WHITE}")
 
@@ -413,16 +422,26 @@ def run_reviews_mode():
             try:
                 if not fb_login(context, page, cookie_str):
                     print(f"{RED}[Reviews] Cookie login failed for {uid}{WHITE}")
+                    failed += 1
                     continue
                 print(f"{GREEN}[Reviews] Logged in via cookies: {uid}{WHITE}")
 
-                if submit_review(page, page_url, review):
-                    print(f"{GREEN}[Reviews] Review submitted for {uid}{WHITE}")
+                result = submit_review(page, page_url, review)
+                if result == "verified":
+                    print(f"{GREEN}[Reviews] Review VERIFIED + posted for {uid}{WHITE}")
                     done += 1
+                elif result == "already":
+                    print(f"{YELLOW}[Reviews] Already reviewed - nothing new posted for {uid}{WHITE}")
+                    already += 1
+                elif result == "submitted":
+                    print(f"{YELLOW}[Reviews] Submitted but NOT verified for {uid}{WHITE}")
+                    unverified += 1
                 else:
                     print(f"{RED}[Reviews] Review FAILED for {uid}{WHITE}")
+                    failed += 1
             except Exception as e:
                 print(f"{RED}[Reviews] Error for {uid}: {e}{WHITE}")
+                failed += 1
             finally:
                 try:
                     context.close()
@@ -432,7 +451,13 @@ def run_reviews_mode():
 
         browser.close()
         print(f"\n{CYAN}{'='*50}{WHITE}")
-        print(f"{GREEN}[Reviews] DONE: {done}/{len(test_pairs)} reviews submitted{WHITE}")
+        print(f"{GREEN}[Reviews] DONE: {done}/{len(test_pairs)} reviews VERIFIED posted{WHITE}")
+        if unverified:
+            print(f"{YELLOW}[Reviews] {unverified} submitted but NOT verified on page{WHITE}")
+        if already:
+            print(f"{YELLOW}[Reviews] {already} already reviewed - nothing new posted{WHITE}")
+        if failed:
+            print(f"{RED}[Reviews] {failed} failed{WHITE}")
         print(f"{CYAN}{'='*50}{WHITE}")
 
 

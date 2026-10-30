@@ -218,7 +218,7 @@ def _classify_with_gemini(model, target, png_bytes):
     resp = model.generate_content([
         prompt,
         {"mime_type": "image/png", "data": png_bytes},
-    ])
+    ], request_options={"timeout": 30})
     text = (resp.text or "").strip().upper()
     return text.startswith("YES")
 
