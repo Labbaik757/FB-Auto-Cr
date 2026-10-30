@@ -38,20 +38,19 @@ def read_lines(path):
 def gemini_variations(reviews, needed, api_key):
     """Use Gemini to expand few reviews into many unique variations.
 
-    Raises RuntimeError (never a raw traceback) when the key is not a
-    real Gemini key, the install fails, or the API call fails - the
-    caller stops the mode cleanly. DEEP CHECK 2026-10-31: the saved
-    key on the PC is not a Gemini API key (real ones start with
-    'AIza'), so every Gemini call failed auth and the run died before
-    the page-link prompt; and generate_content had no timeout, so a
-    stalled API call could hang the run in the same place.
+    Raises RuntimeError (never a raw traceback) when the install
+    fails or the API call fails - the caller falls back to the
+    available reviews instead of stopping. A key that does not look
+    like a Gemini API key (real ones start with 'AIza') only earns a
+    warning, never a block: the API call itself is the test.
+    A format guess must never stop a key the API would accept - that
+    was the 2026-10-31 mistake, and it is what broke reviews.
     """
     if not (api_key or "").startswith("AIza"):
-        raise RuntimeError(
-            "The saved Gemini key is not a Gemini API key - real ones "
-            "start with 'AIza' (free from aistudio.google.com). "
-            "Delete gemini_api_key.txt and enter the real key when "
-            "asked.")
+        print(f"{YELLOW}Warning: this key does not look like a Gemini "
+              f"API key (real ones start with 'AIza'). Trying it "
+              f"anyway - if Gemini rejects it, get one free from "
+              f"aistudio.google.com.{WHITE}")
     try:
         import google.generativeai as genai
     except ImportError:
@@ -351,10 +350,15 @@ def run_reviews_mode():
             try:
                 reviews = gemini_variations(reviews, need, api_key)
             except RuntimeError as e:
+                # Gemini failed: fall back to the reviews on hand and
+                # keep going to the page-link prompt. Returning here
+                # (the 2026-10-31 mistake) meant zero posts even
+                # though usable reviews existed.
                 print(f"{RED}{e}{WHITE}")
-                print(f"{YELLOW}Reviews mode stopped - no reviews "
-                      f"were posted.{WHITE}")
-                return
+                print(f"{YELLOW}Gemini variations failed - posting "
+                      f"the {len(reviews)} available reviews "
+                      f"instead.{WHITE}")
+                need = len(reviews)
             print(f"{GREEN}Gemini generated {len(reviews)} unique reviews{WHITE}")
         else:
             print(f"{YELLOW}No API key - using available reviews only{WHITE}")
