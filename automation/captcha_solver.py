@@ -56,17 +56,19 @@ def get_gemini_key():
 
 
 def _load_model():
-    """Gemini vision model, or None if no key / library missing."""
-    if not get_gemini_key():
+    """Gemini vision model, or None if no key / bad key / library missing.
+    A key that is not a real Gemini API key (real ones start with
+    'AIza') returns None here, so the solver fails fast as
+    no-gemini-key instead of burning API calls that will 401."""
+    key = get_gemini_key()
+    if not key or not key.startswith("AIza"):
         return None
     try:
         import google.generativeai as genai
-        genai.configure(api_key=get_gemini_key())
+        genai.configure(api_key=key)
         return genai.GenerativeModel(MODEL_NAME)
     except Exception:
         return None
-
-
 def _frames(page):
     try:
         frames = page.frames
