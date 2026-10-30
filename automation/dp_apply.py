@@ -210,17 +210,48 @@ def _try_click(page, locators):
 
 
 def _js_click_by_text(page, exact_text):
-    """JS-click the first element whose own text is exactly
-    exact_text. Playwright role clicks time out on this dialog
-    because the dialog overlay intercepts them; a JS click does not.
-    Returns True if an element was clicked, else False."""
+    """JS-click the element whose rendered text is exactly exact_text.
+    Playwright role clicks time out on this dialog because the dialog
+    overlay intercepts them; a JS click does not. Matches on innerText
+    (rendered text), NOT textContent: Facebook obfuscates textContent
+    with combining characters, so exact textContent matches fail on
+    live pages. Prefers a role=menuitem/button match, else the last
+    (deepest) match - nested ancestors share the rendered text of the
+    clickable leaf. Returns True if an element was clicked, else
+    False. LIVE 2026-10-30: the crop dialog is rendered TWICE in the
+    DOM (two identical Save buttons at the same coordinates) - the
+    first match is the stale duplicate, so the last match must be
+    used."""
     try:
         return page.evaluate("""(text) => {
-            const els = [...document.querySelectorAll('*')];
-            const el = els.find(e => e.textContent.trim() === text);
-            if (el) { el.click(); return true; }
-            return false;
+            const els = [...document.querySelectorAll('*')]
+                .filter(e => (e.innerText || '').trim() === text);
+            if (!els.length) return false;
+            const role = els.find(e => ['menuitem', 'button']
+                .includes(e.getAttribute('role')));
+            (role || els[els.length - 1]).click(); return true;
         }""", exact_text)
+    except Exception:
+        return False
+
+
+def _js_click_save(page):
+    """Click the crop dialog's Save button. Facebook renders the
+    dialog twice in the DOM (two identical role=button Save buttons
+    at the same coordinates); the first is a stale duplicate whose
+    click does nothing visible, so the LAST match must be clicked.
+    Matches on innerText, not textContent (obfuscated on live pages).
+    Prefers a div[role=button] with exact text Save, last in DOM."""
+    try:
+        return page.evaluate("""() => {
+            const els = [...document.querySelectorAll('div[role="button"]')]
+                .filter(e => (e.innerText || '').trim() === 'Save');
+            if (els.length) { els[els.length - 1].click(); return true; }
+            const any = [...document.querySelectorAll('*')]
+                .filter(e => (e.innerText || '').trim() === 'Save');
+            if (any.length) { any[any.length - 1].click(); return true; }
+            return false;
+        }""")
     except Exception:
         return False
 
@@ -240,20 +271,45 @@ def _js_click_profile_actions(page):
         return False
 
 
+def _wait_for_text(page, exact_text, timeout_s=10):
+    """Poll until an element with the exact rendered text exists.
+    The menu/dialog renders slowly on throttled connections - a fixed
+    1-2s pause is not enough (live 2026-10-30: the actions menu took
+    ~3s to appear after the click). Returns True if found."""
+    for _ in range(timeout_s * 2):
+        try:
+            n = page.evaluate("""(text) => [...document.querySelectorAll('*')]
+                .filter(e => (e.innerText || '').trim() === text).length""",
+                exact_text)
+            if n:
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return False
+
+
 def apply_dp_on_page(page, photo_path):
     """Assumes page is already on the account's own profile, logged in.
-    Returns dict(ok, detail). Live-verified flow 2026-10-29:
-    Profile picture actions -> Choose profile picture -> file input
-    index 3 (the profile-picture input; index 0 is the cover trap and
-    must never be used) -> crop dialog -> Save. Every step is
-    condition-based; a missing control is an honest failure, never
-    a faked success."""
+    Returns dict(ok, detail). Live-verified flow 2026-10-29,
+    CORRECTED 2026-10-30: Profile picture actions -> Choose profile
+    picture -> file input index 3 (the profile-picture input; index
+    0 is the cover trap and must never be used) -> crop dialog ->
+    Save (LAST role=button match - the dialog is rendered twice in
+    the DOM). Every step is condition-based; a missing control is an
+    honest failure, never a faked success. The before-picture is NOT
+    a gate: on some loads the header DP image is not rendered at all
+    (no alt="Profile picture" img in the DOM) while the actions
+    trigger still exists - so a missing before-src no longer fails
+    the run; success is then the "Your profile picture has been
+    updated" toast, or a changed picture URL."""
     before = _pic_src(page)
-    if before is None:
-        return {"ok": False, "detail": "profile picture element not found"}
     if not _js_click_profile_actions(page):
         return {"ok": False, "detail": "profile picture actions not found"}
-    _human_pause(1.0, 2.0)
+    # The menu renders slowly on throttled connections: poll for it
+    # instead of a fixed short pause.
+    if not _wait_for_text(page, "Choose profile picture", timeout_s=10):
+        return {"ok": False, "detail": "choose profile picture not found"}
     if not _js_click_by_text(page, "Choose profile picture"):
         return {"ok": False, "detail": "choose profile picture not found"}
     _human_pause(1.0, 2.0)
@@ -263,6 +319,13 @@ def apply_dp_on_page(page, photo_path):
     # and never fall back to the first input on failure.
     try:
         inputs = page.locator('input[type="file"]')
+        # The 4th (profile) input renders with the crop dialog: poll
+        # for it instead of an instant count (live 2026-10-30: only 3
+        # inputs were present right after the Choose click).
+        for _ in range(20):
+            if inputs.count() >= 4:
+                break
+            time.sleep(0.5)
         if inputs.count() < 4:
             return {"ok": False,
                     "detail": "profile file input not found "
@@ -270,16 +333,30 @@ def apply_dp_on_page(page, photo_path):
         inputs.nth(3).set_input_files(photo_path, timeout=15000)
     except Exception as e:
         return {"ok": False, "detail": f"file attach failed: {e}"}
-    _human_pause(1.0, 2.0)
+    # The crop dialog also renders slowly: poll for Save before
+    # clicking it.
+    if not _wait_for_text(page, "Save", timeout_s=10):
+        return {"ok": False, "detail": "save button not found"}
     # Save / confirm in the crop dialog (JS click: role click is
     # intercepted by the dialog overlay, same as Choose above).
-    if not _js_click_by_text(page, "Save"):
+    # The dialog is rendered twice: click the LAST Save button.
+    if not _js_click_save(page):
         return {"ok": False, "detail": "save button not found"}
-    # Verify: the picture URL must actually change.
+    # Verify: the toast proves the save, or the picture URL changes.
+    # The crop dialog may stay visible as a stale duplicate after
+    # the toast - the toast is the proof, not the dialog closing.
+    # Poll up to 15s for either signal.
     for _ in range(15):
         time.sleep(1)
+        try:
+            body = page.evaluate(
+                "() => document.body.innerText.slice(0, 4000)")
+        except Exception:
+            body = ""
+        if "Your profile picture has been updated" in body:
+            return {"ok": True, "detail": "profile picture changed"}
         after = _pic_src(page)
-        if after and after != before:
+        if before and after and after != before:
             return {"ok": True, "detail": "profile picture changed"}
     return {"ok": False, "detail": "picture did not change after save"}
 
@@ -400,10 +477,16 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
                         "skipped": False, "via": via,
                         "detail": "login failed"}
         name = read_profile_name(page)
+        # The header DP image is not a gate: on some loads it is
+        # never rendered (no alt="Profile picture" img in the DOM)
+        # while the actions trigger still exists. Retry once after a
+        # reload; if it is still missing, proceed anyway - the
+        # skip check below only runs when a picture is present, and
+        # apply_dp_on_page verifies by toast or URL change.
         if not _wait_for_pic(page):
-            return {"uid": uid, "name": name, "ok": False,
-                    "skipped": False, "via": via,
-                    "detail": "profile picture element not found"}
+            if _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
+                _human_pause(1.0, 2.0)
+                _wait_for_pic(page)
         if has_custom_dp(page):
             return {"uid": uid, "name": name, "ok": True, "skipped": True,
                     "via": via, "detail": "already has DP - skipped"}
