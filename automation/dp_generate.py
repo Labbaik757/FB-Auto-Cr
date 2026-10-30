@@ -1,9 +1,14 @@
-"""DP image generation via the Pollinations free image API (TEST VERSION).
+"""DP image generation (TEST VERSION).
 
-Plain HTTP, stdlib only. Dual endpoint, per Pollinations' own setup:
-key set -> keyed gen endpoint (/image/) with Bearer auth; no key ->
-anonymous legacy endpoint (/prompt/, shared pool, may hit limits).
-The key comes only from POLLINATIONS_API_KEY, never from the repo.
+Primary source: Gemini image generation (google-generativeai, model
+gemini-2.0-flash-preview-image-generation) using the SAME Gemini key
+the tool already uses (GEMINI_API_KEY env, else gemini_api_key.txt in
+the base storage dir - the key Mode 3 saves). Fallback: the Pollinations
+free image API (plain HTTP, stdlib only; dual endpoint per Pollinations'
+own setup: key set -> keyed gen endpoint (/image/) with Bearer auth;
+no key -> anonymous legacy endpoint (/prompt/, shared pool, may hit
+limits). The Pollinations key comes only from POLLINATIONS_API_KEY,
+never from the repo.
 """
 
 import random
@@ -136,3 +141,62 @@ def _retry_after_seconds(body):
     """Seconds from a 'Retry after Ns' message, else the 10s default."""
     m = re.search(r"retry after (\d+)\s*s", body or "", re.I)
     return int(m.group(1)) if m else 10
+
+
+GEMINI_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation"
+
+
+def generate_png_gemini(prompt, out_path, api_key=None, timeout=120):
+    """Generate one image with Gemini. Returns dict(ok, path, bytes,
+    error) in the same shape as generate_png.
+
+    Uses the image-generation model with TEXT+IMAGE response
+    modalities; the image comes back as inline data in the response
+    parts. No key -> honest failure (never a fake image). A response
+    with no image part (blocked prompt, empty reply) is a failure,
+    not a saved file. Non-image bytes are rejected, same as the
+    Pollinations path.
+    """
+    if not api_key:
+        return {"ok": False, "path": None, "bytes": 0,
+                "error": "no Gemini API key"}
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        return {"ok": False, "path": None, "bytes": 0,
+                "error": "google-generativeai not installed"}
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(GEMINI_IMAGE_MODEL)
+        resp = model.generate_content(
+            prompt,
+            generation_config={"response_modalities": ["TEXT", "IMAGE"]},
+            request_options={"timeout": timeout})
+        data = None
+        for cand in (getattr(resp, "candidates", None) or []):
+            content = getattr(cand, "content", None)
+            for part in (getattr(content, "parts", None) or []):
+                inline = getattr(part, "inline_data", None)
+                if inline is not None and getattr(inline, "data", None):
+                    data = inline.data
+                    break
+            if data:
+                break
+        if not data:
+            return {"ok": False, "path": None, "bytes": 0,
+                    "error": "Gemini returned no image "
+                             "(blocked prompt or empty reply?)"}
+        if data.startswith(PNG_MAGIC):
+            ext = ".png"
+        elif data.startswith(JPEG_MAGIC):
+            ext = ".jpg"
+        else:
+            return {"ok": False, "path": None, "bytes": 0,
+                    "error": "Gemini returned non-image data"}
+        path = out_path if out_path.endswith(ext) else out_path + ext
+        with open(path, "wb") as f:
+            f.write(data)
+        return {"ok": True, "path": path, "bytes": len(data), "error": ""}
+    except Exception as e:
+        return {"ok": False, "path": None, "bytes": 0,
+                "error": f"Gemini error: {type(e).__name__}: {e}"}
