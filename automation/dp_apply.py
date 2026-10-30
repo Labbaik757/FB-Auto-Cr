@@ -35,6 +35,7 @@ from automation.dp_generate import (
     build_prompt,
     generate_png,
 )
+from automation.captcha_solver import detect_gate, solve_recaptcha
 from core.path_manager import get_output_dir
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
 
@@ -284,8 +285,14 @@ def apply_dp_on_page(page, photo_path):
 
 
 def password_login(page, uid, password):
-    """Fill the login form. Returns 'checkpoint' or 'submitted'.
-    The caller verifies the session via the c_user cookie."""
+    """Fill the login form. Returns 'checkpoint', 'submitted', or
+    'captcha-unavailable' (a reCAPTCHA gate appeared and the solver
+    could not run - the caller must report that, not a bare
+    'login failed'). The caller verifies the session via the
+    c_user cookie. A reCAPTCHA gate on an old ID is solved by
+    automation/captcha_solver (Gemini vision, no hard-coded
+    answers); if it cannot run, the gate is left for the user in
+    the visible browser."""
     try:
         page.goto(FB_LOGIN_URL, timeout=30000)
         try:
@@ -303,6 +310,10 @@ def password_login(page, uid, password):
         page.wait_for_timeout(3000)
         if "checkpoint" in page.url.lower():
             return "checkpoint"
+        if detect_gate(page) == "recaptcha":
+            solved = solve_recaptcha(page, ctx=None)
+            if not solved["ok"]:
+                return "captcha-unavailable"
         return "submitted"
     except Exception:
         return "submitted"
@@ -374,6 +385,11 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
                 return {"uid": uid, "name": "", "ok": False,
                         "skipped": False, "via": via,
                         "detail": "checkpoint - skipped, no retry"}
+            if status == "captcha-unavailable":
+                return {"uid": uid, "name": "", "ok": False,
+                        "skipped": False, "via": via,
+                        "detail": "captcha solver unavailable - "
+                                  "solve in browser"}
             if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
                 return {"uid": uid, "name": "", "ok": False,
                         "skipped": False, "via": via,
