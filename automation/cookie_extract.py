@@ -27,6 +27,12 @@ LOGIN STATE MACHINE - this is the only logic kept:
   OTP himself; the moment the OTP is accepted and c_user + xs
   appear, the cookie poll detects login by itself and the code
   moves on to the next work.
+- A two_step reCAPTCHA gate is solved by automation/captcha_solver
+  (Gemini vision classifies each visible tile; no answer or tile
+  index is hard-coded). If the solver cannot run (no Gemini key /
+  API error) it returns a failure and the code STOPS there in the
+  visible browser for the user to solve it himself, still polling
+  c_user+xs with no time limit so a manual solve is detected.
 - A bare checkpoint page is the other stop: skip that account,
   no retry, batch moves on.
 - A cookie set is only a success when BOTH c_user and xs are
@@ -40,6 +46,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 from core.path_manager import get_base_storage_dir, get_output_dir
+from automation.captcha_solver import detect_gate, solve_recaptcha
 from ui.colors import CYAN, GREEN, RED, WHITE, YELLOW
 
 DEFAULT_INPUT = "output/cookie_input.txt"
@@ -221,10 +228,15 @@ def run_cookie_mode():
                     _login(page, uid, account["password"])
                     res = None
                     otp_noted = False
+                    gate_noted = False
+                    in_gate = False
                     # No time limit after login: poll until the
                     # session appears, or a checkpoint stops it.
                     # An OTP page is a STOP point: stay there for
                     # the user to enter it, never solve or fill it.
+                    # A reCAPTCHA gate is solved once per appearance
+                    # by the solver; if the solver cannot run, stay
+                    # there for the user to solve it, still polling.
                     while True:
                         cookies = ctx.cookies()
                         if _has_c_user(cookies) and _has_xs(cookies):
@@ -236,6 +248,23 @@ def run_cookie_mode():
                             res = {"uid": uid, "ok": False, "cookies": "",
                                    "detail": "checkpoint - skipped, no retry"}
                             break
+                        gate = detect_gate(page)
+                        if gate == "recaptcha" and not in_gate:
+                            in_gate = True
+                            solved = solve_recaptcha(page, ctx)
+                            if solved["ok"]:
+                                print(f"{GREEN}[Cookie] gate solved for "
+                                      f"{uid} - waiting for login..."
+                                      f"{WHITE}")
+                            elif not gate_noted:
+                                print(f"{YELLOW}[Cookie] gate for {uid} "
+                                      f"- solver unavailable "
+                                      f"({solved['detail']}), solve it "
+                                      f"in the browser yourself, "
+                                      f"waiting...{WHITE}")
+                                gate_noted = True
+                        elif gate != "recaptcha":
+                            in_gate = False
                         if _otp_present(page) and not otp_noted:
                             print(f"{YELLOW}[Cookie] OTP asked for {uid} "
                                   f"- stopped in browser, enter it "
