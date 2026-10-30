@@ -35,6 +35,48 @@ def read_lines(path):
         return [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
 
 
+def _norm_review(text):
+    """Normalize a review for duplicate comparison: lower case, all
+    whitespace collapsed. Two texts that differ only by case or
+    spacing are the same review."""
+    return " ".join((text or "").strip().lower().split())
+
+
+def _load_posted_reviews(path):
+    """The durable record of review texts already posted (one per
+    line). Returns a set of normalized texts; missing file = empty."""
+    posted = set()
+    for line in read_lines(path):
+        norm = _norm_review(line)
+        if norm:
+            posted.add(norm)
+    return posted
+
+
+def _record_posted_review(path, text):
+    """Append one posted review text to the durable record. A record
+    failure must never kill posting."""
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(text.strip().replace("\n", " ") + "\n")
+    except Exception:
+        pass
+
+
+def _dedupe_reviews(reviews, posted):
+    """Drop texts already posted (in `posted`) and internal duplicates,
+    keeping first occurrences in order. Returns (fresh_list, skipped)."""
+    seen = set()
+    fresh = []
+    for review in reviews:
+        norm = _norm_review(review)
+        if not norm or norm in posted or norm in seen:
+            continue
+        seen.add(norm)
+        fresh.append(review)
+    return fresh, len(reviews) - len(fresh)
+
+
 def gemini_variations(reviews, needed, api_key):
     """Use Gemini to expand few reviews into many unique variations.
 
@@ -331,6 +373,19 @@ def run_reviews_mode():
         print(f"{RED}No reviews in reviews.txt - paste client list there{WHITE}")
         return
 
+    # STRICT dedupe: a review text posted once is never posted again,
+    # not even from a different ID. posted_reviews.txt is the durable
+    # record; it is checked before pairing and updated after every
+    # verified/submitted post.
+    posted_path = os.path.join(get_output_dir(), "posted_reviews.txt")
+    posted = _load_posted_reviews(posted_path)
+    reviews, _dupes = _dedupe_reviews(reviews, posted)
+    if _dupes:
+        print(f"{YELLOW}Skipped {_dupes} duplicate review(s) - already posted before.{WHITE}")
+    if not reviews:
+        print(f"{RED}All reviews were already posted - nothing new to post.{WHITE}")
+        return
+
     # Ask how many reviews needed
     try:
         need = int(input(f"{CYAN}How many reviews needed? {WHITE}").strip())
@@ -365,6 +420,12 @@ def run_reviews_mode():
                       f"instead.{WHITE}")
                 need = len(reviews)
             print(f"{GREEN}Gemini generated {len(reviews)} unique reviews{WHITE}")
+            reviews, _dupes = _dedupe_reviews(reviews, posted)
+            if _dupes:
+                print(f"{YELLOW}Skipped {_dupes} generated variation(s) - duplicate of an already-posted review.{WHITE}")
+            if not reviews:
+                print(f"{RED}No fresh variations left - all generated reviews were already posted.{WHITE}")
+                return
         else:
             print(f"{YELLOW}No API key - using available reviews only{WHITE}")
             need = len(reviews)
@@ -439,6 +500,11 @@ def run_reviews_mode():
                 else:
                     print(f"{RED}[Reviews] Review FAILED for {uid}{WHITE}")
                     failed += 1
+                if result in ("verified", "submitted"):
+                    _n = _norm_review(review)
+                    if _n and _n not in posted:
+                        posted.add(_n)
+                        _record_posted_review(posted_path, review)
             except Exception as e:
                 print(f"{RED}[Reviews] Error for {uid}: {e}{WHITE}")
                 failed += 1
