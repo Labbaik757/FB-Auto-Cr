@@ -189,8 +189,10 @@ def submit_review(page, page_url, review_text):
     Returns 'verified' only when the review is live on the page;
     'submitted' when the dialog closed but the review was not found
     live; 'already' when the account had already reviewed (nothing
-    new posted); False on failure. Only 'verified' counts in the
-    terminal DONE total."""
+    new posted); 'duplicate' when the text is ALREADY posted on the
+    page (live check, any account, including before this tool ran);
+    False on failure. Only 'verified' counts in the terminal DONE
+    total."""
     # Extract page ID and go directly to reviews tab
     import re as _re
     _m = _re.search(r'id=(\d+)', page_url)
@@ -201,6 +203,27 @@ def submit_review(page, page_url, review_text):
         _reviews_url = page_url.rstrip("/") + "/reviews"
     page.goto(_reviews_url, wait_until="domcontentloaded", timeout=30000)
     _human_pause(2.0, 3.0)
+
+    # LIVE duplicate check: is this exact text already posted on the
+    # page - by any account, including posts made before this tool
+    # ever ran? Scroll to load more reviews, then match the first 40
+    # chars of the normalized text against the rendered page text.
+    # A match means the text is already live: never post it again.
+    # (Short generic texts can match by chance - that is the price of
+    # strict; the local posted record is the second layer.)
+    try:
+        for _ in range(3):
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(1.5)
+        _all = page.evaluate("() => document.body.innerText || ''")
+        _norm_all = " ".join((_all or "").lower().split())
+        _snippet = " ".join(review_text.strip().lower().split())[:40]
+        if _snippet and _snippet in _norm_all:
+            with print_lock:
+                print(f"{YELLOW}[Reviews] Text already posted on page - skipping{WHITE}")
+            return "duplicate"
+    except Exception:
+        pass  # check failed: fall through and post normally
 
     # Skip if this account already reviewed (no Yes button = already done)
     try:
@@ -467,6 +490,7 @@ def run_reviews_mode():
         unverified = 0
         already = 0
         failed = 0
+        duplicate = 0
         for acc_line, review in test_pairs:
             parts = acc_line.split("|")
             uid = parts[0]
@@ -497,10 +521,13 @@ def run_reviews_mode():
                 elif result == "submitted":
                     print(f"{YELLOW}[Reviews] Submitted but NOT verified for {uid}{WHITE}")
                     unverified += 1
+                elif result == "duplicate":
+                    print(f"{YELLOW}[Reviews] Text already posted on page - skipping for {uid}{WHITE}")
+                    duplicate += 1
                 else:
                     print(f"{RED}[Reviews] Review FAILED for {uid}{WHITE}")
                     failed += 1
-                if result in ("verified", "submitted"):
+                if result in ("verified", "submitted", "duplicate"):
                     _n = _norm_review(review)
                     if _n and _n not in posted:
                         posted.add(_n)
@@ -522,6 +549,8 @@ def run_reviews_mode():
             print(f"{YELLOW}[Reviews] {unverified} submitted but NOT verified on page{WHITE}")
         if already:
             print(f"{YELLOW}[Reviews] {already} already reviewed - nothing new posted{WHITE}")
+        if duplicate:
+            print(f"{YELLOW}[Reviews] {duplicate} skipped - text already posted on page{WHITE}")
         if failed:
             print(f"{RED}[Reviews] {failed} failed{WHITE}")
         print(f"{CYAN}{'='*50}{WHITE}")
