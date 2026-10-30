@@ -36,7 +36,22 @@ def read_lines(path):
 
 
 def gemini_variations(reviews, needed, api_key):
-    """Use Gemini to expand few reviews into many unique variations."""
+    """Use Gemini to expand few reviews into many unique variations.
+
+    Raises RuntimeError (never a raw traceback) when the key is not a
+    real Gemini key, the install fails, or the API call fails - the
+    caller stops the mode cleanly. DEEP CHECK 2026-10-31: the saved
+    key on the PC is not a Gemini API key (real ones start with
+    'AIza'), so every Gemini call failed auth and the run died before
+    the page-link prompt; and generate_content had no timeout, so a
+    stalled API call could hang the run in the same place.
+    """
+    if not (api_key or "").startswith("AIza"):
+        raise RuntimeError(
+            "The saved Gemini key is not a Gemini API key - real ones "
+            "start with 'AIza' (free from aistudio.google.com). "
+            "Delete gemini_api_key.txt and enter the real key when "
+            "asked.")
     try:
         import google.generativeai as genai
     except ImportError:
@@ -46,10 +61,17 @@ def gemini_variations(reviews, needed, api_key):
         # path and the install never ran, then the re-import crashed
         # the whole run. A list call never splits on spaces.
         print(f"{YELLOW}Installing google-generativeai...{WHITE}")
-        res = subprocess.run(
-            [sys.executable, "-m", "pip", "install",
-             "google-generativeai", "-q"],
-            capture_output=True, text=True)
+        try:
+            res = subprocess.run(
+                [sys.executable, "-m", "pip", "install",
+                 "google-generativeai", "-q"],
+                capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "pip install timed out after 3 minutes. Run this once "
+                "in your terminal, then rerun the tool:\n"
+                f"\"{sys.executable}\" -m pip install "
+                "google-generativeai")
         try:
             import google.generativeai as genai
         except ImportError:
@@ -63,9 +85,6 @@ def gemini_variations(reviews, needed, api_key):
                 f"\"{sys.executable}\" -m pip install "
                 "google-generativeai")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
-
     base = "\n".join([f"{i+1}. {r}" for i, r in enumerate(reviews)])
     prompt = f"""You are a review writer. Given these sample reviews:
 {base}
@@ -74,8 +93,15 @@ Generate {needed} UNIQUE review variations. Same positive meaning, different wor
 Natural human tone, varied length (some short, some 2 sentences).
 Output ONLY the reviews, one per line, no numbering."""
 
-    resp = model.generate_content(prompt)
-    lines = [l.strip() for l in resp.text.strip().split("\n") if l.strip()]
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        resp = model.generate_content(
+            prompt, request_options={"timeout": 120})
+        lines = [l.strip() for l in resp.text.strip().split("\n") if l.strip()]
+    except Exception as e:
+        raise RuntimeError(
+            f"Gemini call failed: {type(e).__name__}: {e}")
     # Clean numbering if present
     cleaned = []
     for l in lines:
@@ -84,7 +110,6 @@ Output ONLY the reviews, one per line, no numbering."""
         if l:
             cleaned.append(l)
     return cleaned[:needed]
-
 
 def fb_login(context, page, cookie_str):
     """Login to Facebook directly via saved cookies (safer than password)."""
