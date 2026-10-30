@@ -160,6 +160,10 @@ def generate_png_gemini(prompt, out_path, api_key=None, timeout=120):
     if not api_key:
         return {"ok": False, "path": None, "bytes": 0,
                 "error": "no Gemini API key"}
+    if not api_key.startswith("AIza"):
+        return {"ok": False, "path": None, "bytes": 0,
+                "error": "Gemini key is not a Gemini API key "
+                         "(real ones start with 'AIza')"}
     try:
         import google.generativeai as genai
     except ImportError:
