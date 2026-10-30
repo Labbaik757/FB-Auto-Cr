@@ -9,6 +9,7 @@ Reads:
 Integrated into main tool as Reviews Mode.
 """
 import os
+import subprocess
 import sys
 import time
 import random
@@ -39,9 +40,28 @@ def gemini_variations(reviews, needed, api_key):
     try:
         import google.generativeai as genai
     except ImportError:
+        # Install it with the SAME python that runs this tool, as a
+        # list (no shell): the old os.system string broke on PC paths
+        # with a space (C:\\Users\\Rizvi Lion\\...) - cmd split the
+        # path and the install never ran, then the re-import crashed
+        # the whole run. A list call never splits on spaces.
         print(f"{YELLOW}Installing google-generativeai...{WHITE}")
-        os.system(f"{sys.executable} -m pip install google-generativeai -q")
-        import google.generativeai as genai
+        res = subprocess.run(
+            [sys.executable, "-m", "pip", "install",
+             "google-generativeai", "-q"],
+            capture_output=True, text=True)
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise RuntimeError(
+                "google-generativeai is not installed and the auto "
+                "install did not work"
+                + (f" (pip said: {res.stderr.strip()[:200]})"
+                   if res and res.stderr and res.stderr.strip() else "")
+                + ". Run this once in your terminal, then rerun the "
+                "tool:\n"
+                f"\"{sys.executable}\" -m pip install "
+                "google-generativeai")
 
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-2.0-flash")
@@ -303,7 +323,13 @@ def run_reviews_mode():
                     _kf.write(api_key)
                 print(f"{GREEN}API key saved - won't ask again{WHITE}")
         if api_key:
-            reviews = gemini_variations(reviews, need, api_key)
+            try:
+                reviews = gemini_variations(reviews, need, api_key)
+            except RuntimeError as e:
+                print(f"{RED}{e}{WHITE}")
+                print(f"{YELLOW}Reviews mode stopped - no reviews "
+                      f"were posted.{WHITE}")
+                return
             print(f"{GREEN}Gemini generated {len(reviews)} unique reviews{WHITE}")
         else:
             print(f"{YELLOW}No API key - using available reviews only{WHITE}")
