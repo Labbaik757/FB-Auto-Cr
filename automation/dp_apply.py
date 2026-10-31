@@ -14,13 +14,15 @@ below were LIVE-VERIFIED on a real ID (Sophia Wilson) on 2026-10-29:
 Profile picture actions -> Choose profile picture -> file input
 index 3 -> crop dialog -> Save, verified by the profile picture
 changing and by the "updated profile picture" timeline post.
-DP generation: Gemini first (same key Mode 3 saves), Pollinations
-as fallback when Gemini has no key or fails. Pollinations key set
--> keyed gen endpoint; no key -> anonymous legacy endpoint (shared
-pool). Keys come only from env/files, never from the repo.
+DP pictures come from FILES, not AI: automation/dp_pick picks
+one photo per account from dp_pics/male/ or dp_pics/female/,
+recognising the account's name (read from the profile) and
+gender (About page first, first name second). No generation of
+any kind runs in this mode.
 """
 
 import os
+import re
 import time
 
 from playwright.sync_api import sync_playwright
@@ -30,15 +32,16 @@ from automation.browser_register import (
     _human_pause,
     _human_type,
 )
-from automation.dp_generate import (
-    JPEG_MAGIC,
-    PNG_MAGIC,
-    build_prompt,
-    generate_png,
-    generate_png_gemini,
+from automation.dp_pick import (
+    detect_gender,
+    dp_pics_dir,
+    folder_status,
+    pick_dp,
+    record_used,
+    used_file_path,
 )
 from automation.captcha_solver import detect_gate, solve_recaptcha
-from core.path_manager import get_base_storage_dir, get_output_dir
+from core.path_manager import get_output_dir
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
 
 FB_PROFILE_URL = "https://www.facebook.com/profile.php?id={uid}"
@@ -129,11 +132,67 @@ def _is_logged_in(page, ctx):
 # --- profile reading ---
 
 
+def _looks_like_name(text):
+    """A display name: 1-4 words of letters, spaces, hyphens,
+    apostrophes, periods. Rejects Facebook chrome labels."""
+    if not text or len(text) > 60:
+        return False
+    low = text.strip().lower()
+    if low in ("facebook", "home", "notifications", "log in", "sign up",
+               "see more on facebook", "edit profile", "add to story",
+               "add cover photo"):
+        return False
+    if not re.fullmatch(r"[A-Za-z\u00c0-\u00ff'\u2019. -]+",
+                        text.strip()):
+        return False
+    words = text.strip().split()
+    return 1 <= len(words) <= 4
+
+
 def read_profile_name(page):
+    """Profile display name. Facebook no longer renders the name in
+    an h1 (verified live 2026-10-31: zero h1 elements on the profile
+    page; the name is a plain DIV) and the tab title is just
+    "(N) Facebook", so the name is found by rendered size: the
+    largest name-like text near the top of the profile header.
+    Title / h1 scans are kept as fallbacks for older markup."""
     try:
-        el = page.locator("h1").first
-        if el.count() and el.inner_text(timeout=5000).strip():
-            return el.inner_text(timeout=5000).strip()
+        title = (page.title() or "").strip()
+        name = re.sub(r"^\(\d+\)\s*", "", title.split("|")[0]).strip()
+        if _looks_like_name(name):
+            return name
+    except Exception:
+        pass
+    try:
+        name = page.evaluate(r"""() => {
+            const cands = [];
+            for (const e of document.querySelectorAll('div, span, h1, h2')) {
+                const t = (e.innerText || '').trim();
+                if (!/^[A-Za-z\u00c0-\u00ff'\u2019. -]+$/.test(t)) continue;
+                const w = t.split(/\s+/);
+                if (w.length < 1 || w.length > 4 || t.length < 2 || t.length > 60) continue;
+                const kids = [...e.children].filter(c => (c.innerText || '').trim() === t);
+                if (kids.length) continue;
+                const fs = parseFloat((getComputedStyle(e).fontSize || '0'));
+                const r = e.getBoundingClientRect();
+                if (fs < 20 || r.top < 0 || r.top > 600) continue;
+                cands.push({t, fs, top: r.top});
+            }
+            cands.sort((a, b) => b.fs - a.fs || a.top - b.top);
+            return cands.length ? cands[0].t : '';
+        }""")
+        if name and _looks_like_name(name):
+            return name
+    except Exception:
+        pass
+    try:
+        for el in page.locator("h1").all():
+            try:
+                text = (el.inner_text(timeout=2000) or "").strip()
+            except Exception:
+                continue
+            if _looks_like_name(text):
+                return text
     except Exception:
         pass
     return ""
@@ -401,27 +460,6 @@ def password_login(page, uid, password):
 # --- one account, end to end (single login) ---
 
 
-def _seed_for(uid):
-    if uid.isdigit():
-        return int(uid) % 1000000
-    return sum(uid.encode()) % 1000000
-
-
-def _existing_dp(dp_dir, uid):
-    """Path of an already-generated valid image for this uid, else None.
-    Reusing it saves free-pool quota on reruns."""
-    for ext, magic in ((".png", PNG_MAGIC), (".jpg", JPEG_MAGIC)):
-        path = os.path.join(dp_dir, uid + ext)
-        try:
-            with open(path, "rb") as f:
-                head = f.read(len(magic))
-            if head == magic:
-                return path
-        except Exception:
-            continue
-    return None
-
-
 def _goto_profile(page, url, timeout=30000):
     """Load a profile page without ever raising. Facebook's 'load'
     event can hang on slow assets, so wait only for DOM content and
@@ -436,45 +474,9 @@ def _goto_profile(page, url, timeout=30000):
     return False
 
 
-def _gemini_api_key():
-    """The SAME Gemini key Mode 3 / the captcha solver use: env first,
-    else gemini_api_key.txt in the base storage dir."""
-    key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if key:
-        return key
-    try:
-        path = os.path.join(get_base_storage_dir(), "gemini_api_key.txt")
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                return f.read().strip()
-    except Exception:
-        pass
-    return ""
-
-
-def _generate_dp(prompt, out_path, seed, pollinations_key):
-    """Generate one DP image: Gemini first, Pollinations fallback.
-    Returns the generate dict with an extra 'source' key ('gemini' or
-    'pollinations') so the log shows what actually made the picture.
-    If Gemini has no key or fails, the run falls back instead of
-    dying - the fallback is logged, never silent."""
-    gemini_key = _gemini_api_key()
-    if gemini_key:
-        gen = generate_png_gemini(prompt, out_path, api_key=gemini_key)
-        if gen["ok"]:
-            gen["source"] = "gemini"
-            return gen
-        print(f"{YELLOW}[DP] Gemini failed ({gen['error'][:120]}) - "
-              f"falling back to Pollinations.{WHITE}")
-    gen = generate_png(prompt, out_path, seed=seed,
-                       api_key=pollinations_key,
-                       timeout=60, max_attempts=2)
-    gen["source"] = "pollinations"
-    return gen
-
-
-def process_account(pw, account, api_key, dp_dir, headless=False):
-    """Login -> read name -> skip if DP exists -> else generate + apply.
+def process_account(pw, account, headless=False):
+    """Login -> read name -> skip if DP exists -> else read gender,
+    pick a pic from dp_pics/ (name + gender match) and apply it.
     Returns dict(uid, name, ok, skipped, via, detail)."""
     uid = account["uid"]
     browser = pw.chromium.launch(headless=headless,
@@ -529,27 +531,33 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
         if has_custom_dp(page):
             return {"uid": uid, "name": name, "ok": True, "skipped": True,
                     "via": via, "detail": "already has DP - skipped"}
-        existing = _existing_dp(dp_dir, uid)
-        if existing:
-            res = apply_dp_on_page(page, existing)
-            res["uid"] = uid
-            res["name"] = name
-            res["via"] = via
-            res["skipped"] = False
-            if res["ok"]:
-                res["detail"] = "applied from existing file"
-            return res
-        prompt = build_prompt(name or f"User {uid}", "", _seed_for(uid))
-        gen = _generate_dp(prompt, os.path.join(dp_dir, uid),
-                   _seed_for(uid), api_key)
-        if not gen["ok"]:
-            return {"uid": uid, "name": name, "ok": False,
+        gender, method = detect_gender(page, uid, name)
+        # Gender read moves the page to About - go back to the
+        # profile before the upload (apply_dp_on_page needs the
+        # profile page).
+        if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
+            return {"uid": uid, "name": "", "ok": False,
                     "skipped": False, "via": via,
-                    "detail": f"generation failed: {gen['error']}"}
-        res = apply_dp_on_page(page, gen["path"])
+                    "detail": "profile page did not load"}
+        _human_pause(1.0, 2.0)
+        picked = pick_dp(name, gender)
+        if not picked:
+            if gender:
+                detail = (f"no DP pic for {gender} - add photos to "
+                          f"dp_pics/{gender}/")
+            else:
+                detail = (f"gender unknown and no pic named for "
+                          f"'{name}' - add a pic named '{name}' to "
+                          "dp_pics/male/ or dp_pics/female/")
+            return {"uid": uid, "name": name, "ok": False,
+                    "skipped": False, "via": via, "detail": detail}
+        res = apply_dp_on_page(page, picked["path"])
         if res["ok"]:
+            record_used(used_file_path(), picked["path"])
             res["detail"] = ("profile picture changed "
-                             f"(via {gen.get('source', '?')})")
+                             f"({os.path.basename(picked['path'])}, "
+                             f"{picked['gender'] or 'gender unknown'}, "
+                             f"{picked['reason']}, gender via {method})")
         res["uid"] = uid
         res["name"] = name
         res["via"] = via
@@ -564,18 +572,13 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
 
 def run_dp_mode():
     print(f"{CYAN}=== DP Apply (test version) ==={WHITE}")
-    api_key = os.environ.get("POLLINATIONS_API_KEY", "").strip()
-    gemini_key = _gemini_api_key()
-    if gemini_key:
-        print(f"{CYAN}Gemini key found - DPs will be generated by Gemini.{WHITE}")
-    else:
-        print(f"{YELLOW}No Gemini key - DPs fall back to Pollinations. "
-              f"Save a key via Mode 3 or set GEMINI_API_KEY.{WHITE}")
-    if api_key:
-        print(f"{CYAN}Pollinations key set - fallback uses keyed endpoint.{WHITE}")
-    else:
-        print(f"{YELLOW}No Pollinations key - fallback uses the anonymous "
-              f"endpoint (shared pool, may hit limits).{WHITE}")
+    print(f"{CYAN}DP pics folder: {dp_pics_dir()}{WHITE}")
+    status = folder_status()
+    print(f"{CYAN}male: {status['male']} pic(s), "
+          f"female: {status['female']} pic(s){WHITE}")
+    if status["male"] + status["female"] == 0:
+        print(f"{YELLOW}No DP pics found - put photos in dp_pics/male/ "
+              f"or dp_pics/female/ (see dp_pics/README.md).{WHITE}")
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
     if not accounts:
@@ -590,16 +593,13 @@ def run_dp_mode():
     except Exception:
         gap = 60
     gap = max(0, min(gap, 300))
-    dp_dir = os.path.join(get_output_dir(), "dp")
-    os.makedirs(dp_dir, exist_ok=True)
     applied = skipped = failed = 0
     with sync_playwright() as pw:
         for i, account in enumerate(accounts):
             if i > 0:
                 time.sleep(gap)
             try:
-                res = process_account(pw, account, api_key, dp_dir,
-                                      headless=False)
+                res = process_account(pw, account, headless=False)
             except Exception as e:
                 # One account's unexpected failure must never kill
                 # the batch: record it and move to the next account.
@@ -619,11 +619,5 @@ def run_dp_mode():
                 failed += 1
                 print(f"{RED}[DP] {label}: FAILED - {res['detail']}"
                       f"{WHITE}")
-                if "402" in res["detail"]:
-                    print(f"{RED}[DP] Anonymous free pool exhausted - "
-                          f"stopping the batch. Set a free Pollinations "
-                          f"key or retry later; already-applied DPs are "
-                          f"kept.{WHITE}")
-                    break
     print(f"{CYAN}Done: applied {applied}, skipped {skipped}, "
-          f"failed {failed}. DPs saved in {dp_dir}{WHITE}")
+          f"failed {failed}.{WHITE}")
