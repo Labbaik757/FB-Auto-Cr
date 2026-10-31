@@ -218,27 +218,60 @@ def _pic_locator(page):
     return None
 
 
+def _svg_pic_href(page):
+    """Href of the largest visible SVG <image> on the page. Facebook
+    renders the header DP circle as an SVG image (168x168, href =
+    the scontent photo URL), not an <img> - verified live
+    2026-10-31. The nav/composer avatars (40x40) show the same
+    photo, so any visible one answers the custom-or-default
+    question. None if no SVG image has a usable href."""
+    try:
+        return page.evaluate("""() => {
+            const imgs = [...document.querySelectorAll('svg image')]
+                .map(e => ({href: e.getAttribute('href')
+                            || e.getAttribute('xlink:href') || '',
+                            w: e.getBoundingClientRect().width}))
+                .filter(x => x.href && x.w > 0);
+            if (!imgs.length) return null;
+            imgs.sort((a, b) => b.w - a.w);
+            return imgs[0].href;
+        }""")
+    except Exception:
+        return None
+
+
 def _wait_for_pic(page):
     """Wait until some profile-picture candidate attaches. FB renders
     the header asynchronously; an instant count() misses a picture that
-    is still loading. True if found, else False."""
+    is still loading. True if found, else False. The header circle is
+    an SVG image, so that is waited for too."""
     for loc in _pic_candidates(page):
         try:
             loc.wait_for(state="attached", timeout=5000)
             return True
         except Exception:
             continue
-    return False
+    try:
+        page.locator("svg image").first.wait_for(
+            state="attached", timeout=5000)
+        return True
+    except Exception:
+        return False
 
 
 def _pic_src(page):
+    """URL of the current profile picture, or None. Tries the <img>
+    candidates first, then the SVG image href (the header circle on
+    current markup)."""
     loc = _pic_locator(page)
-    if loc is None:
-        return None
-    try:
-        return loc.get_attribute("src", timeout=5000)
-    except Exception:
-        return None
+    if loc is not None:
+        try:
+            src = loc.get_attribute("src", timeout=5000)
+            if src:
+                return src
+        except Exception:
+            pass
+    return _svg_pic_href(page)
 
 
 def has_custom_dp(page):
