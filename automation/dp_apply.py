@@ -1,22 +1,20 @@
-"""DP Apply (TEST VERSION) - profile pictures for IDs without a DP.
+"""DP Apply - profile pictures for IDs without a DP.
 
-Run via main.py mode 5. Reads output/browser_accounts.txt (the same
-file every mode writes/reads through core.path_manager), opens each
-account, and applies a photorealistic DP only where the ID has none.
-IDs that already have a DP are skipped, never overwritten.
+Run via the DP option in main.py Modes 2 and 3. Reads
+output/browser_accounts.txt (the same file every mode writes/reads
+through core.path_manager), opens each account, and applies a DP
+picked from the dp_pics/ folder (male/ and female/, matched by
+exact gender and name) only where the ID has none. IDs that
+already have a DP are skipped, never overwritten.
 
-One account at a time, human behaviour throughout (shared helpers from
-browser_register), a gap between accounts, one failure never stops the
-batch, a checkpoint skips the account with no retry (stand-down rule).
+One account at a time, human behaviour throughout (shared helpers
+from browser_register), a gap between accounts, one failure never
+stops the batch, a checkpoint skips the account with no retry
+(stand-down rule). Login is the same cookie login as reviews
+(fb_login); a dead cookie falls back to password login.
 
-TEST-VERSION HONESTY: the Facebook dialog selectors below are
-best-effort and NOT live-verified yet. Run mode 5 on ONE account first
-and report what breaks; every failure is reported honestly, never
-faked as success. Pollinations setup: key set -> keyed gen endpoint;
-no key -> anonymous legacy endpoint (shared pool). The key comes only
-from POLLINATIONS_API_KEY, never from the repo.
+No image generation lives here: pictures come from files only.
 """
-
 import os
 import time
 
@@ -27,12 +25,15 @@ from automation.browser_register import (
     _human_pause,
     _human_type,
 )
-from automation.dp_generate import (
-    JPEG_MAGIC,
-    PNG_MAGIC,
-    build_prompt,
-    generate_png,
+from automation.dp_pick import (
+    detect_gender,
+    dp_pics_dir,
+    folder_status,
+    pick_dp,
+    record_used,
+    used_file_path,
 )
+from automation.fb_automation import fb_login
 from core.path_manager import get_output_dir
 from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
 
@@ -164,17 +165,27 @@ def _wait_for_pic(page):
             return True
         except Exception:
             continue
-    return False
+    try:
+        page.locator("svg image").first.wait_for(
+            state="attached", timeout=5000)
+        return True
+    except Exception:
+        return False
 
 
 def _pic_src(page):
+    """URL of the current profile picture, or None. Tries the
+    <img> candidates first, then the SVG image href (the
+    header circle on current markup)."""
     loc = _pic_locator(page)
-    if loc is None:
-        return None
-    try:
-        return loc.get_attribute("src", timeout=5000)
-    except Exception:
-        return None
+    if loc is not None:
+        try:
+            src = loc.get_attribute("src", timeout=5000)
+            if src:
+                return src
+        except Exception:
+            pass
+    return _svg_pic_href(page)
 
 
 def has_custom_dp(page):
@@ -206,15 +217,115 @@ def _try_click(page, locators):
     return False
 
 
+def _svg_pic_href(page):
+    """Href of the largest visible SVG <image> on the page. Facebook
+    renders the header DP circle as an SVG image, not an <img>.
+    None if no SVG image has a usable href."""
+    try:
+        return page.evaluate("""() => {
+            const imgs = [...document.querySelectorAll('svg image')]
+                .map(e => ({href: e.getAttribute('href')
+                            || e.getAttribute('xlink:href') || '',
+                            w: e.getBoundingClientRect().width}))
+                .filter(x => x.href && x.w > 0);
+            if (!imgs.length) return null;
+            imgs.sort((a, b) => b.w - a.w);
+            return imgs[0].href;
+        }""")
+    except Exception:
+        return None
+
+
+def _js_click_by_text(page, exact_text):
+    """JS-click the element whose rendered text is exactly exact_text.
+    Playwright role clicks time out on this dialog because the dialog
+    overlay intercepts them; a JS click does not. Matches on innerText
+    (rendered text), NOT textContent: Facebook obfuscates textContent
+    with combining characters, so exact textContent matches fail on
+    live pages. Prefers a role=menuitem/button match, else the last
+    (deepest) match - nested ancestors share the rendered text of the
+    clickable leaf. Returns True if an element was clicked, else
+    False."""
+    try:
+        return page.evaluate("""(text) => {
+            const els = [...document.querySelectorAll('*')]
+                .filter(e => (e.innerText || '').trim() === text);
+            if (!els.length) return false;
+            const role = els.find(e => ['menuitem', 'button']
+                .includes(e.getAttribute('role')));
+            (role || els[els.length - 1]).click(); return true;
+        }""", exact_text)
+    except Exception:
+        return False
+
+
+def _js_click_save(page):
+    """Click the crop dialog's Save button. Facebook renders the
+    dialog twice in the DOM (two identical role=button Save buttons
+    at the same coordinates); the first is a stale duplicate whose
+    click does nothing visible, so the LAST match must be clicked.
+    Matches on innerText, not textContent (obfuscated on live pages).
+    Prefers a div[role=button] with exact text Save, last in DOM."""
+    try:
+        return page.evaluate("""() => {
+            const els = [...document.querySelectorAll('div[role="button"]')]
+                .filter(e => (e.innerText || '').trim() === 'Save');
+            if (els.length) { els[els.length - 1].click(); return true; }
+            const any = [...document.querySelectorAll('*')]
+                .filter(e => (e.innerText || '').trim() === 'Save');
+            if (any.length) { any[any.length - 1].click(); return true; }
+            return false;
+        }""")
+    except Exception:
+        return False
+
+
+def _js_click_profile_actions(page):
+    """JS-click the first element with aria-label
+    'Profile picture actions'. Returns True if clicked."""
+    try:
+        return page.evaluate("""() => {
+            const el = [...document.querySelectorAll('[aria-label]')]
+                .find(e => e.getAttribute('aria-label')
+                           === 'Profile picture actions');
+            if (el) { el.click(); return true; }
+            return false;
+        }""")
+    except Exception:
+        return False
+
+
+def _wait_for_text(page, exact_text, timeout_s=10):
+    """Poll until an element with the exact rendered text exists.
+    The menu/dialog renders slowly on throttled connections - a fixed
+    short pause is not enough. Returns True if found."""
+    for _ in range(timeout_s * 2):
+        try:
+            n = page.evaluate("""(text) => [...document.querySelectorAll('*')]
+                .filter(e => (e.innerText || '').trim() === text).length""",
+                exact_text)
+            if n:
+                return True
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return False
+
+
 def apply_dp_on_page(page, photo_path):
     """Assumes page is already on the account's own profile, logged in.
-    Returns dict(ok, detail). Every step is condition-based; a missing
-    control is an honest failure, never a faked success."""
+    Returns dict(ok, detail). Live 2026-11-05: the edit control is
+    aria-label "Profile picture actions"; try it first (hover, then
+    click, then wait for the menu), fall back to the older
+    Edit/Update buttons, and fail honestly if no upload control ever
+    appears. Success is proved only by the picture URL changing; a
+    missing control is never reported as success."""
     before = _pic_src(page)
     if before is None:
         return {"ok": False, "detail": "profile picture element not found"}
-    # Hover the picture first: the edit control only appears on hover.
-    # Never click the picture itself: that opens the photo viewer.
+    # Live control first: hover the picture, then click the actions
+    # control. In the live view the menu did not surface on hover
+    # alone, so the click is what opens it.
     try:
         loc = _pic_locator(page)
         if loc is not None:
@@ -222,25 +333,50 @@ def apply_dp_on_page(page, photo_path):
     except Exception:
         pass
     _human_pause(0.5, 1.5)
-    # Open the picture editor via its edit control.
-    opened = _try_click(page, [
-        page.get_by_role("button", name="Edit profile picture").first,
-        page.get_by_role("button", name="Update profile picture").first,
-    ])
+    opened = False
+    actions_clicked = _js_click_profile_actions(page)
+    if actions_clicked:
+        _human_pause(1.0, 2.0)
+        for menu_text in ("Choose profile picture", "Upload photo",
+                          "Update profile picture"):
+            if _wait_for_text(page, menu_text, timeout_s=10):
+                opened = _js_click_by_text(page, menu_text)
+                if opened:
+                    break
     if not opened:
-        return {"ok": False, "detail": "edit control not found"}
+        # Fallback: the older Edit/Update buttons.
+        opened = _try_click(page, [
+            page.get_by_role("button", name="Edit profile picture").first,
+            page.get_by_role("button", name="Update profile picture").first,
+        ])
+        if not opened:
+            if actions_clicked:
+                return {"ok": False,
+                        "detail": "profile picture menu did not open"}
+            return {"ok": False, "detail": "profile picture actions not found"}
+        _human_pause(1.0, 2.0)
+        if not _try_click(page, [
+            page.get_by_role("button", name="Upload photo").first,
+            page.get_by_role("button", name="Update profile picture").first,
+        ]):
+            return {"ok": False, "detail": "upload control not found"}
     _human_pause(1.0, 2.0)
-    # Choose upload inside the dialog/menu.
-    if not _try_click(page, [
-        page.get_by_role("button", name="Upload photo").first,
-        page.get_by_role("button", name="Update profile picture").first,
-    ]):
-        return {"ok": False, "detail": "upload control not found"}
-    _human_pause(1.0, 2.0)
-    # Attach the file (hidden input pattern, same as marketplace upload).
+    # Attach the file. The page holds several file inputs; the
+    # profile-picture input is the fourth when four are present.
+    # Never use the first input blindly: index 0 can set a cover
+    # draft instead of a profile picture.
     try:
-        page.locator('input[type="file"]').first.set_input_files(
-            photo_path, timeout=15000)
+        inputs = page.locator('input[type="file"]')
+        for _ in range(120):
+            if inputs.count() >= 4:
+                break
+            time.sleep(0.5)
+        if inputs.count() >= 4:
+            inputs.nth(3).set_input_files(photo_path, timeout=15000)
+        elif inputs.count() > 0:
+            inputs.first.set_input_files(photo_path, timeout=15000)
+        else:
+            return {"ok": False, "detail": "profile file input not found"}
     except Exception:
         try:
             with page.expect_file_chooser(timeout=10000) as fc:
@@ -250,13 +386,16 @@ def apply_dp_on_page(page, photo_path):
         except Exception as e:
             return {"ok": False, "detail": f"file attach failed: {e}"}
     _human_pause(1.0, 2.0)
-    # Save / confirm.
-    if not _try_click(page, [
-        page.get_by_role("button", name="Save", exact=True).first,
-        page.get_by_role("button", name="Crop and save").first,
-        page.get_by_role("button", name="Done").first,
-    ]):
-        return {"ok": False, "detail": "save button not found"}
+    # Save / confirm. Prefer the JS Save click: the dialog overlay
+    # intercepts role clicks, and the dialog can be rendered twice
+    # in the DOM, so the last Save button is the live one.
+    if not _js_click_save(page):
+        if not _try_click(page, [
+            page.get_by_role("button", name="Save", exact=True).first,
+            page.get_by_role("button", name="Crop and save").first,
+            page.get_by_role("button", name="Done").first,
+        ]):
+            return {"ok": False, "detail": "save button not found"}
     # Verify: the picture URL must actually change.
     for _ in range(15):
         time.sleep(1)
@@ -294,27 +433,6 @@ def password_login(page, uid, password):
 # --- one account, end to end (single login) ---
 
 
-def _seed_for(uid):
-    if uid.isdigit():
-        return int(uid) % 1000000
-    return sum(uid.encode()) % 1000000
-
-
-def _existing_dp(dp_dir, uid):
-    """Path of an already-generated valid image for this uid, else None.
-    Reusing it saves free-pool quota on reruns."""
-    for ext, magic in ((".png", PNG_MAGIC), (".jpg", JPEG_MAGIC)):
-        path = os.path.join(dp_dir, uid + ext)
-        try:
-            with open(path, "rb") as f:
-                head = f.read(len(magic))
-            if head == magic:
-                return path
-        except Exception:
-            continue
-    return None
-
-
 def _goto_profile(page, url, timeout=30000):
     """Load a profile page without ever raising. Facebook's 'load'
     event can hang on slow assets, so wait only for DOM content and
@@ -329,26 +447,33 @@ def _goto_profile(page, url, timeout=30000):
     return False
 
 
-def process_account(pw, account, api_key, dp_dir, headless=False):
-    """Login -> read name -> skip if DP exists -> else generate + apply.
-    Returns dict(uid, name, ok, skipped, via, detail)."""
+def process_account(pw, account, headless=False):
+    """Login -> read name -> skip if DP exists -> else read gender,
+    pick a pic from dp_pics/ (name + gender match) and apply it.
+    Login uses the same cookie login as reviews (fb_login); a dead
+    cookie falls back to password login, as before. Returns dict
+    (uid, name, ok, skipped, via, detail)."""
     uid = account["uid"]
     browser = pw.chromium.launch(headless=headless,
                                  args=["--no-sandbox"])
     try:
         ctx = browser.new_context()
-        cookies = parse_cookie_string(account.get("cookies", ""),
-                                      "facebook.com")
-        if cookies:
-            ctx.add_cookies(cookies)
         page = ctx.new_page()
-        if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
-            return {"uid": uid, "name": "", "ok": False,
-                    "skipped": False, "via": "cookie",
-                    "detail": "profile page did not load"}
-        _human_pause(1.0, 2.0)
         via = "cookie"
-        logged_in = _is_logged_in(page, ctx)
+        logged_in = False
+        if account.get("cookies"):
+            try:
+                logged_in = fb_login(ctx, page, account["cookies"])
+            except Exception:
+                logged_in = False
+        if logged_in:
+            if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
+                return {"uid": uid, "name": "", "ok": False,
+                        "skipped": False, "via": via,
+                        "detail": "profile page did not load"}
+            _human_pause(1.0, 2.0)
+            if not _is_logged_in(page, ctx):
+                logged_in = False
         if not logged_in:
             # Cookie dead (common for old IDs) -> password fallback.
             via = "password"
@@ -374,25 +499,33 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
         if has_custom_dp(page):
             return {"uid": uid, "name": name, "ok": True, "skipped": True,
                     "via": via, "detail": "already has DP - skipped"}
-        existing = _existing_dp(dp_dir, uid)
-        if existing:
-            res = apply_dp_on_page(page, existing)
-            res["uid"] = uid
-            res["name"] = name
-            res["via"] = via
-            res["skipped"] = False
-            if res["ok"]:
-                res["detail"] = "applied from existing file"
-            return res
-        prompt = build_prompt(name or f"User {uid}", "", _seed_for(uid))
-        gen = generate_png(prompt,
-                           os.path.join(dp_dir, uid),
-                           seed=_seed_for(uid), api_key=api_key)
-        if not gen["ok"]:
-            return {"uid": uid, "name": name, "ok": False,
+        gender, method = detect_gender(page, uid, name)
+        # Gender read moves the page to About - go back to the
+        # profile before the upload (apply_dp_on_page needs the
+        # profile page).
+        if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
+            return {"uid": uid, "name": "", "ok": False,
                     "skipped": False, "via": via,
-                    "detail": f"generation failed: {gen['error']}"}
-        res = apply_dp_on_page(page, gen["path"])
+                    "detail": "profile page did not load"}
+        _human_pause(1.0, 2.0)
+        picked = pick_dp(name, gender)
+        if not picked:
+            if gender:
+                detail = (f"no DP pic for {gender} - add photos to "
+                          f"dp_pics/{gender}/")
+            else:
+                detail = (f"gender unknown and no pic named for "
+                          f"'{name}' - add a pic named '{name}' to "
+                          "dp_pics/male/ or dp_pics/female/")
+            return {"uid": uid, "name": name, "ok": False,
+                    "skipped": False, "via": via, "detail": detail}
+        res = apply_dp_on_page(page, picked["path"])
+        if res["ok"]:
+            record_used(used_file_path(), picked["path"])
+            res["detail"] = ("profile picture changed "
+                             f"({os.path.basename(picked['path'])}, "
+                             f"{picked['gender'] or 'gender unknown'}, "
+                             f"{picked['reason']}, gender via {method})")
         res["uid"] = uid
         res["name"] = name
         res["via"] = via
@@ -402,18 +535,18 @@ def process_account(pw, account, api_key, dp_dir, headless=False):
         browser.close()
 
 
-# --- interactive entry (main.py mode 5) ---
+# --- interactive entry (main.py Modes 2 and 3) ---
 
 
 def run_dp_mode():
-    print(f"{CYAN}=== DP Apply (test version) ==={WHITE}")
-    api_key = os.environ.get("POLLINATIONS_API_KEY", "").strip()
-    if api_key:
-        print(f"{CYAN}Pollinations key set - using keyed endpoint.{WHITE}")
-    else:
-        print(f"{YELLOW}No Pollinations key set - using anonymous "
-              f"endpoint (shared pool, may hit limits). Set "
-              f"POLLINATIONS_API_KEY for your own quota.{WHITE}")
+    print(f"{CYAN}=== DP Apply ==={WHITE}")
+    print(f"{CYAN}DP pics folder: {dp_pics_dir()}{WHITE}")
+    status = folder_status()
+    print(f"{CYAN}male: {status['male']} pic(s), "
+          f"female: {status['female']} pic(s){WHITE}")
+    if status["male"] + status["female"] == 0:
+        print(f"{YELLOW}No DP pics found - put photos in dp_pics/male/ "
+              f"or dp_pics/female/ (see dp_pics/README.md).{WHITE}")
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
     if not accounts:
@@ -428,16 +561,13 @@ def run_dp_mode():
     except Exception:
         gap = 60
     gap = max(0, min(gap, 300))
-    dp_dir = os.path.join(get_output_dir(), "dp")
-    os.makedirs(dp_dir, exist_ok=True)
     applied = skipped = failed = 0
     with sync_playwright() as pw:
         for i, account in enumerate(accounts):
             if i > 0:
                 time.sleep(gap)
             try:
-                res = process_account(pw, account, api_key, dp_dir,
-                                      headless=False)
+                res = process_account(pw, account, headless=False)
             except Exception as e:
                 # One account's unexpected failure must never kill
                 # the batch: record it and move to the next account.
@@ -447,8 +577,7 @@ def run_dp_mode():
             label = res.get("name") or res["uid"]
             if res.get("skipped"):
                 skipped += 1
-                print(f"{YELLOW}[DP] {label}: skipped - {res['detail']}"
-                      f"{WHITE}")
+                print(f"{YELLOW}[DP] {label}: {res['detail']}{WHITE}")
             elif res["ok"]:
                 applied += 1
                 print(f"{GREEN}[DP] {label}: applied via {res['via']}"
@@ -457,11 +586,5 @@ def run_dp_mode():
                 failed += 1
                 print(f"{RED}[DP] {label}: FAILED - {res['detail']}"
                       f"{WHITE}")
-                if "402" in res["detail"]:
-                    print(f"{RED}[DP] Anonymous free pool exhausted - "
-                          f"stopping the batch. Set a free Pollinations "
-                          f"key or retry later; already-applied DPs are "
-                          f"kept.{WHITE}")
-                    break
     print(f"{CYAN}Done: applied {applied}, skipped {skipped}, "
-          f"failed {failed}. DPs saved in {dp_dir}{WHITE}")
+          f"failed {failed}.{WHITE}")
