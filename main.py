@@ -37,6 +37,20 @@ def render_config(config_state):
     print(f"{LINE}")
 
 
+def mode3_plan(choice):
+    """Order of work for Mode 3 from the user's choice.
+    Returns (do_dp, do_reviews, dp_first). Choice 1 runs
+    reviews only, which matches the old DP default of no."""
+    choice = (choice or "1").strip()
+    if choice == "2":
+        return (True, False, True)
+    if choice == "3":
+        return (True, True, True)
+    if choice == "4":
+        return (True, True, False)
+    return (False, True, False)
+
+
 # Main entry point - collects user input and launches automation workers
 def run_create():
     config_state = {}
@@ -85,11 +99,20 @@ def run_create():
         from automation.fb_automation import run_reviews_mode
         config_state["mode"] = "Facebook Automation"
         render_config(config_state)
-        _dp = input(f"\n {GREEN}[{RED}●{GREEN}] Apply DPs to accounts first? (y/n) [n] {EKL} ").strip().lower()
-        if _dp == "y":
-            from automation.dp_apply import run_dp_mode
+        print(f" {GREEN}[{RED}01{GREEN}] Reviews only {WHITE}(post feedback, no DP)")
+        print(f" {GREEN}[{RED}02{GREEN}] DP only {WHITE}(apply profile pictures, no reviews)")
+        print(f" {GREEN}[{RED}03{GREEN}] DP first, then reviews {WHITE}")
+        print(f" {GREEN}[{RED}04{GREEN}] Reviews first, then DP {WHITE}")
+        print(f"{LINE}")
+        _choice = input(f" {GREEN}[{RED}●{GREEN}] Select (1/2/3/4) [1] {EKL} ").strip() or "1"
+        _do_dp, _do_reviews, _dp_first = mode3_plan(_choice)
+        from automation.dp_apply import run_dp_mode
+        if _do_dp and _dp_first:
             run_dp_mode()
-        run_reviews_mode()
+        if _do_reviews:
+            run_reviews_mode()
+        if _do_dp and not _dp_first:
+            run_dp_mode()
         input(f"\n {WHITE}Press Enter to exit... ")
         return
 
