@@ -102,16 +102,13 @@ def has_c_user(cookies):
 
 
 def _is_logged_in(page, ctx):
-    """True only for a real logged-in session. Cookie presence alone
-    proves nothing: dead cookies stay in the jar, and a logged-out
-    profile page still shows the person's name in h1 - so the old
-    check (c_user + name) passed for dead sessions and the password
-    fallback never ran. A logged-out page always shows a Log in
-    control; a logged-in session never does - that is the
-    discriminator."""
+    """True only for a real logged-in session. The discriminator is
+    the Log in control: a logged-out page always shows one, a
+    logged-in session never does. Cookie presence (c_user) is
+    required as well. The profile name is NOT required here: the
+    header renders asynchronously, and a slow name must never turn
+    a good login into a failure."""
     if not has_c_user(ctx.cookies()):
-        return False
-    if not read_profile_name(page):
         return False
     for role in ("link", "button"):
         try:
@@ -452,8 +449,9 @@ def _goto_profile(page, url, timeout=30000):
 def process_account(pw, account, headless=False):
     """Login -> read name -> leave it if DP exists -> else read gender,
     pick a pic from dp_pics/ (name + gender match) and apply it.
-    Login uses the same cookie login as reviews (fb_login); a dead
-    cookie falls back to password login, as before. Returns dict
+    Login uses the same cookie login as reviews (fb_login) and trusts
+    it the same way; a dead cookie falls back to password login only
+    when a password is in the file. Returns dict
     (uid, name, ok, has_dp, via, detail)."""
     uid = account["uid"]
     browser = pw.chromium.launch(headless=headless,
@@ -469,15 +467,24 @@ def process_account(pw, account, headless=False):
             except Exception:
                 logged_in = False
         if logged_in:
+            # Cookie login succeeded - trust it exactly like reviews
+            # does. No second login gate here: the old re-check
+            # demanded the profile name in h1, and a slow header
+            # threw away a good cookie login, then the empty-password
+            # fallback could never work.
             if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
                 return {"uid": uid, "name": "", "ok": False,
                         "has_dp": False, "via": via,
                         "detail": "profile page did not load"}
             _human_pause(1.0, 2.0)
-            if not _is_logged_in(page, ctx):
-                logged_in = False
         if not logged_in:
-            # Cookie dead (common for old IDs) -> password fallback.
+            # Cookie login failed. Password fallback only when a
+            # password is actually in the file - with none (uid ||
+            # cookie lines) a password attempt can never work.
+            if not account.get("password"):
+                return {"uid": uid, "name": "", "ok": False,
+                        "has_dp": False, "via": via,
+                        "detail": "login failed"}
             via = "password"
             status = password_login(page, uid, account["password"])
             if status == "checkpoint":
