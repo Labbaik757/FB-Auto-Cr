@@ -26,9 +26,11 @@ from automation.browser_register import (
     _human_type,
 )
 from automation.dp_pick import (
+    _norm,
     detect_gender,
     dp_pics_dir,
     folder_status,
+    pic_stems,
     pick_dp,
     record_used,
     used_file_path,
@@ -135,33 +137,93 @@ def _is_logged_in(page, ctx):
 # --- profile reading ---
 
 
-def read_profile_name(page):
-    """Profile name from the h1, falling back to the page title.
-    The header renders asynchronously: on a slow load the h1 is
-    empty even though the page is loaded (seen live 2026-11-05),
-    and an empty name breaks the DP pick (no name match, no gender
-    from first name). The title is server-rendered, so it is there
-    as soon as the page loads ("Robert Robinson" or
-    "Robert Robinson | Facebook"). A bare "Facebook" title or a
-    login/signup title is not a name."""
+# UI labels that are never a profile name.
+_NAME_STOPLIST = {
+    "notifications", "facebook", "home", "menu", "search", "watch",
+    "marketplace", "groups", "gaming", "see more", "create", "log in",
+    "sign up", "settings", "help", "profile", "friends", "photos",
+    "videos", "about", "posts",
+}
+
+
+def _plausible_name(text, candidate_names=()):
+    """A profile name looks like a person's name, not UI chrome.
+    A text that matches a DP pic filename is always accepted."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if _norm(text) in candidate_names:
+        return text
+    low = text.lower()
+    if low in _NAME_STOPLIST:
+        return ""
+    if "log in" in low or "sign up" in low:
+        return ""
+    if len(text.split()) < 2:
+        return ""
+    return text
+
+
+def _try_read_profile_name(page, candidate_names):
+    """One attempt at the profile name: every h1, og:title, then
+    the page body matched against the DP pic filenames. The FIRST
+    h1 is page chrome ("Notifications"), never the profile name,
+    and the page title is just "Facebook" (with a "(2) " count) -
+    neither is the name. The owner's name IS in the body text from
+    ~3s after load (seen live 2026-11-05)."""
     try:
-        el = page.locator("h1").first
-        if el.count() and el.inner_text(timeout=5000).strip():
-            return el.inner_text(timeout=5000).strip()
+        for text in page.locator("h1").all_inner_texts(timeout=2000):
+            name = _plausible_name(text, candidate_names)
+            if name:
+                return name
     except Exception:
         pass
     try:
-        title = (page.title() or "").strip()
-        for suffix in (" | Facebook", " | Meta"):
-            if title.endswith(suffix):
-                title = title[: -len(suffix)].strip()
-        low = title.lower()
-        if title and low != "facebook" and "log in" not in low \
-                and "sign up" not in low:
-            return title
+        og = page.locator(
+            'meta[property="og:title"]').first.get_attribute(
+                "content", timeout=2000)
+        name = _plausible_name(og, candidate_names)
+        if name:
+            return name
     except Exception:
         pass
+    if candidate_names:
+        try:
+            body = page.evaluate(
+                "() => (document.body ? document.body.innerText : '')"
+                ".slice(0, 1000)")
+            low_body = " " + _norm(body or "") + " "
+            best = ""
+            for stem in candidate_names:
+                if stem and (" " + stem + " ") in low_body:
+                    if len(stem) > len(best):
+                        best = stem
+            if best:
+                import re as _re
+                m = _re.search(_re.escape(best), body or "",
+                               _re.IGNORECASE)
+                return m.group(0) if m else best
+        except Exception:
+            pass
     return ""
+
+
+def read_profile_name(page, candidate_names=(), timeout_s=10):
+    """Profile name, polled until it appears. The header renders
+    asynchronously: at 1s the h1 is empty and the name is not in
+    the body text yet; from ~3s the name is on the page. Polls for
+    up to timeout_s; "" if no name appears."""
+    deadline = time.time() + timeout_s
+    while True:
+        name = _try_read_profile_name(page, candidate_names)
+        if name:
+            return name
+        if time.time() >= deadline:
+            return ""
+        try:
+            page.wait_for_timeout(1000)
+        except Exception:
+            pass
 
 
 def _pic_candidates(page):
@@ -532,7 +594,11 @@ def process_account(pw, account, headless=False):
                 return {"uid": uid, "name": "", "ok": False,
                         "has_dp": False, "via": via,
                         "detail": "login failed"}
-        name = read_profile_name(page)
+        try:
+            candidates = pic_stems()
+        except Exception:
+            candidates = []
+        name = read_profile_name(page, candidates)
         if not _wait_for_pic(page):
             return {"uid": uid, "name": name, "ok": False,
                     "has_dp": False, "via": via,

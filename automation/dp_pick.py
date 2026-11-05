@@ -112,6 +112,18 @@ def _list_pics(folder):
     return pics
 
 
+def pic_stems(pics_dir=None):
+    """Normalised filename stems of every pic, for name matching.
+    The profile page body text is matched against these stems to
+    find the account's name when the header does not expose it."""
+    base = pics_dir or dp_pics_dir()
+    out = []
+    for gender in ("female", "male"):
+        for path in _list_pics(os.path.join(base, gender)):
+            out.append(_norm(os.path.splitext(os.path.basename(path))[0]))
+    return out
+
+
 def folder_status(pics_dir=None):
     """Pic counts per gender folder, for the run header."""
     base = pics_dir or dp_pics_dir()
