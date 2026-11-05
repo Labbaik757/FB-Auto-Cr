@@ -44,7 +44,15 @@ FB_LOGIN_URL = "https://www.facebook.com/login"
 # avatars come from the static CDN or carry one of these markers. Any
 # unrecognised picture URL is treated as custom (safe side: missing
 # one DP is harmless, overwriting an existing DP is not).
-DEFAULT_DP_MARKERS = ("silhouette", "static.xx", "empty-profile", "default")
+# Facebook's own default avatar is served from the user-content CDN
+# too (scontent), so "scontent" alone does NOT prove a custom
+# picture. The default avatar is one fixed photo object:
+# 84628273_176159830277856_972693363922829312_n.jpg - its photo id
+# 176159830277856 is the marker (seen live on the graph endpoint
+# for an ID with no DP). Check these markers BEFORE the scontent
+# shortcut, or the default avatar is misread as a custom DP.
+DEFAULT_DP_MARKERS = ("silhouette", "static.xx", "empty-profile",
+                      "default", "176159830277856")
 
 
 # --- accounts file (format: uid|password|cookies, one per line) ---
@@ -192,10 +200,10 @@ def has_custom_dp(page):
     if not src:
         return False
     low = src.lower()
-    if "scontent" in low:
-        return True
     if any(m in low for m in DEFAULT_DP_MARKERS):
         return False
+    if "scontent" in low:
+        return True
     return True  # unrecognised URL: treated as custom
 
 
