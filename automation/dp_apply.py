@@ -46,13 +46,18 @@ FB_LOGIN_URL = "https://www.facebook.com/login"
 # one DP is harmless, overwriting an existing DP is not).
 # Facebook's own default avatar is served from the user-content CDN
 # too (scontent), so "scontent" alone does NOT prove a custom
-# picture. The default avatar is one fixed photo object:
-# 84628273_176159830277856_972693363922829312_n.jpg - its photo id
-# 176159830277856 is the marker (seen live on the graph endpoint
-# for an ID with no DP). Check these markers BEFORE the scontent
-# shortcut, or the default avatar is misread as a custom DP.
+# picture. The default avatar is a fixed stock photo, but the
+# logged-in profile page serves a DIFFERENT object than the public
+# graph endpoint: the graph endpoint returns
+# 84628273_176159830277856_972693363922829312_n.jpg (id
+# 176159830277856), while the profile page serves
+# 453178253_471506465671661_2781666950760530985_n.png (seen live
+# 2026-11-05 on an ID with no DP). Both ids are markers. Check
+# these markers BEFORE the scontent shortcut, or the default avatar
+# is misread as a custom DP.
 DEFAULT_DP_MARKERS = ("silhouette", "static.xx", "empty-profile",
-                      "default", "176159830277856")
+                      "default", "176159830277856",
+                      "453178253_471506465671661_2781666950760530985")
 
 
 # --- accounts file (format: uid|password|cookies, one per line) ---
@@ -131,10 +136,29 @@ def _is_logged_in(page, ctx):
 
 
 def read_profile_name(page):
+    """Profile name from the h1, falling back to the page title.
+    The header renders asynchronously: on a slow load the h1 is
+    empty even though the page is loaded (seen live 2026-11-05),
+    and an empty name breaks the DP pick (no name match, no gender
+    from first name). The title is server-rendered, so it is there
+    as soon as the page loads ("Robert Robinson" or
+    "Robert Robinson | Facebook"). A bare "Facebook" title or a
+    login/signup title is not a name."""
     try:
         el = page.locator("h1").first
         if el.count() and el.inner_text(timeout=5000).strip():
             return el.inner_text(timeout=5000).strip()
+    except Exception:
+        pass
+    try:
+        title = (page.title() or "").strip()
+        for suffix in (" | Facebook", " | Meta"):
+            if title.endswith(suffix):
+                title = title[: -len(suffix)].strip()
+        low = title.lower()
+        if title and low != "facebook" and "log in" not in low \
+                and "sign up" not in low:
+            return title
     except Exception:
         pass
     return ""
