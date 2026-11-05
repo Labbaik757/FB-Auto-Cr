@@ -28,7 +28,6 @@ from automation.browser_register import (
 from automation.dp_pick import (
     _norm,
     detect_gender,
-    dp_pics_dir,
     folder_status,
     pic_stems,
     pick_dp,
@@ -37,7 +36,7 @@ from automation.dp_pick import (
 )
 from automation.fb_automation import fb_login
 from core.path_manager import get_output_dir
-from ui.colors import GREEN, RED, WHITE, YELLOW, CYAN
+from ui.colors import GREEN, WHITE, CYAN
 
 FB_PROFILE_URL = "https://www.facebook.com/profile.php?id={uid}"
 FB_LOGIN_URL = "https://www.facebook.com/login"
@@ -657,29 +656,17 @@ def process_account(pw, account, headless=False):
 
 
 def run_dp_mode():
-    print(f"{CYAN}=== DP Apply ==={WHITE}")
-    print(f"{CYAN}DP pics folder: {dp_pics_dir()}{WHITE}")
+    print(f"{CYAN}DP Apply{WHITE}")
     status = folder_status()
-    print(f"{CYAN}male: {status['male']} pic(s), "
-          f"female: {status['female']} pic(s){WHITE}")
-    if status["male"] + status["female"] == 0:
-        print(f"{RED}DP file is empty{WHITE}")
-        return
+    print(f"{CYAN}Male: {status['male']}{WHITE}")
+    print(f"{CYAN}Female: {status['female']}{WHITE}")
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
-    if not accounts:
-        print(f"{RED}No accounts in output/browser_accounts.txt{WHITE}")
+    n = len(accounts)
+    print(f"{CYAN}Found {n} account{'s' if n != 1 else ''}{WHITE}")
+    if status["male"] + status["female"] == 0 or not accounts:
         return
-    print(f"{CYAN}Found {len(accounts)} account(s). "
-          f"Only IDs without a DP will get one.{WHITE}")
-    try:
-        gap = int(input(
-            f"{CYAN}Gap between accounts in seconds [60] {WHITE}"
-        ).strip() or "60")
-    except Exception:
-        gap = 60
-    gap = max(0, min(gap, 300))
-    applied = has_dp = failed = 0
+    gap = 60
     with sync_playwright() as pw:
         for i, account in enumerate(accounts):
             if i > 0:
@@ -693,16 +680,5 @@ def run_dp_mode():
                        "ok": False, "has_dp": False, "via": "",
                        "detail": f"unexpected error: {e}"}
             label = res.get("name") or res["uid"]
-            if res.get("has_dp"):
-                has_dp += 1
-                print(f"{YELLOW}[DP] {label}: {res['detail']}{WHITE}")
-            elif res["ok"]:
-                applied += 1
-                print(f"{GREEN}[DP] {label}: applied via {res['via']}"
-                      f"{WHITE}")
-            else:
-                failed += 1
-                print(f"{RED}[DP] {label}: FAILED - {res['detail']}"
-                      f"{WHITE}")
-    print(f"{CYAN}Done: applied {applied}, already has DP {has_dp}, "
-          f"failed {failed}.{WHITE}")
+            if res.get("ok") and not res.get("has_dp"):
+                print(f"{GREEN}[DP] {label}: applied{WHITE}")
