@@ -5,11 +5,11 @@ output/browser_accounts.txt (the same file every mode writes/reads
 through core.path_manager), opens each account, and applies a DP
 picked from the dp_pics/ folder (male/ and female/, matched by
 exact gender and name) only where the ID has none. IDs that
-already have a DP are skipped, never overwritten.
+already have a DP are left as they are, never overwritten.
 
 One account at a time, human behaviour throughout (shared helpers
 from browser_register), a gap between accounts, one failure never
-stops the batch, a checkpoint skips the account with no retry
+stops the batch, a checkpoint stops the account with no retry
 (stand-down rule). Login is the same cookie login as reviews
 (fb_login); a dead cookie falls back to password login.
 
@@ -42,7 +42,7 @@ FB_LOGIN_URL = "https://www.facebook.com/login"
 
 # A custom photo is served from Facebook's user-content CDN. Default
 # avatars come from the static CDN or carry one of these markers. Any
-# unrecognised picture URL is treated as custom (skip = safe: missing
+# unrecognised picture URL is treated as custom (safe side: missing
 # one DP is harmless, overwriting an existing DP is not).
 DEFAULT_DP_MARKERS = ("silhouette", "static.xx", "empty-profile", "default")
 
@@ -199,7 +199,7 @@ def has_custom_dp(page):
         return True
     if any(m in low for m in DEFAULT_DP_MARKERS):
         return False
-    return True  # unrecognised URL: skip is the safe side
+    return True  # unrecognised URL: treated as custom
 
 
 # --- DP upload on one open profile page ---
@@ -315,11 +315,13 @@ def _wait_for_text(page, exact_text, timeout_s=10):
 def apply_dp_on_page(page, photo_path):
     """Assumes page is already on the account's own profile, logged in.
     Returns dict(ok, detail). Live 2026-11-05: the edit control is
-    aria-label "Profile picture actions"; try it first (hover, then
-    click, then wait for the menu), fall back to the older
-    Edit/Update buttons, and fail honestly if no upload control ever
-    appears. Success is proved only by the picture URL changing; a
-    missing control is never reported as success."""
+    aria-label "Profile picture actions"; clicking it OPENS the menu
+    (confirmed live, menu items: "Choose profile picture",
+    "Upload Photo", "Add Frame"). The probe that set the file on the
+    first file input hit the cover-photo flow instead, so the file is
+    attached to the fourth input when four are present. Success is
+    proved only by the picture URL changing; a missing control is
+    never reported as success."""
     before = _pic_src(page)
     if before is None:
         return {"ok": False, "detail": "profile picture element not found"}
@@ -337,7 +339,7 @@ def apply_dp_on_page(page, photo_path):
     actions_clicked = _js_click_profile_actions(page)
     if actions_clicked:
         _human_pause(1.0, 2.0)
-        for menu_text in ("Choose profile picture", "Upload photo",
+        for menu_text in ("Choose profile picture", "Upload Photo",
                           "Update profile picture"):
             if _wait_for_text(page, menu_text, timeout_s=10):
                 opened = _js_click_by_text(page, menu_text)
@@ -448,11 +450,11 @@ def _goto_profile(page, url, timeout=30000):
 
 
 def process_account(pw, account, headless=False):
-    """Login -> read name -> skip if DP exists -> else read gender,
+    """Login -> read name -> leave it if DP exists -> else read gender,
     pick a pic from dp_pics/ (name + gender match) and apply it.
     Login uses the same cookie login as reviews (fb_login); a dead
     cookie falls back to password login, as before. Returns dict
-    (uid, name, ok, skipped, via, detail)."""
+    (uid, name, ok, has_dp, via, detail)."""
     uid = account["uid"]
     browser = pw.chromium.launch(headless=headless,
                                  args=["--no-sandbox"])
@@ -469,7 +471,7 @@ def process_account(pw, account, headless=False):
         if logged_in:
             if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
                 return {"uid": uid, "name": "", "ok": False,
-                        "skipped": False, "via": via,
+                        "has_dp": False, "via": via,
                         "detail": "profile page did not load"}
             _human_pause(1.0, 2.0)
             if not _is_logged_in(page, ctx):
@@ -480,32 +482,32 @@ def process_account(pw, account, headless=False):
             status = password_login(page, uid, account["password"])
             if status == "checkpoint":
                 return {"uid": uid, "name": "", "ok": False,
-                        "skipped": False, "via": via,
-                        "detail": "checkpoint - skipped, no retry"}
+                        "has_dp": False, "via": via,
+                        "detail": "checkpoint - stopped, no retry"}
             if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
                 return {"uid": uid, "name": "", "ok": False,
-                        "skipped": False, "via": via,
+                        "has_dp": False, "via": via,
                         "detail": "profile page did not load"}
             _human_pause(1.0, 2.0)
             if not _is_logged_in(page, ctx):
                 return {"uid": uid, "name": "", "ok": False,
-                        "skipped": False, "via": via,
+                        "has_dp": False, "via": via,
                         "detail": "login failed"}
         name = read_profile_name(page)
         if not _wait_for_pic(page):
             return {"uid": uid, "name": name, "ok": False,
-                    "skipped": False, "via": via,
+                    "has_dp": False, "via": via,
                     "detail": "profile picture element not found"}
         if has_custom_dp(page):
-            return {"uid": uid, "name": name, "ok": True, "skipped": True,
-                    "via": via, "detail": "already has DP - skipped"}
+            return {"uid": uid, "name": name, "ok": True, "has_dp": True,
+                    "via": via, "detail": "already has DP"}
         gender, method = detect_gender(page, uid, name)
         # Gender read moves the page to About - go back to the
         # profile before the upload (apply_dp_on_page needs the
         # profile page).
         if not _goto_profile(page, FB_PROFILE_URL.format(uid=uid)):
             return {"uid": uid, "name": "", "ok": False,
-                    "skipped": False, "via": via,
+                    "has_dp": False, "via": via,
                     "detail": "profile page did not load"}
         _human_pause(1.0, 2.0)
         picked = pick_dp(name, gender)
@@ -518,7 +520,7 @@ def process_account(pw, account, headless=False):
                           f"'{name}' - add a pic named '{name}' to "
                           "dp_pics/male/ or dp_pics/female/")
             return {"uid": uid, "name": name, "ok": False,
-                    "skipped": False, "via": via, "detail": detail}
+                    "has_dp": False, "via": via, "detail": detail}
         res = apply_dp_on_page(page, picked["path"])
         if res["ok"]:
             record_used(used_file_path(), picked["path"])
@@ -529,7 +531,7 @@ def process_account(pw, account, headless=False):
         res["uid"] = uid
         res["name"] = name
         res["via"] = via
-        res["skipped"] = False
+        res["has_dp"] = False
         return res
     finally:
         browser.close()
@@ -545,8 +547,8 @@ def run_dp_mode():
     print(f"{CYAN}male: {status['male']} pic(s), "
           f"female: {status['female']} pic(s){WHITE}")
     if status["male"] + status["female"] == 0:
-        print(f"{YELLOW}No DP pics found - put photos in dp_pics/male/ "
-              f"or dp_pics/female/ (see dp_pics/README.md).{WHITE}")
+        print(f"{RED}DP file is empty{WHITE}")
+        return
     accounts = parse_accounts_file(
         os.path.join(get_output_dir(), "browser_accounts.txt"))
     if not accounts:
@@ -561,7 +563,7 @@ def run_dp_mode():
     except Exception:
         gap = 60
     gap = max(0, min(gap, 300))
-    applied = skipped = failed = 0
+    applied = has_dp = failed = 0
     with sync_playwright() as pw:
         for i, account in enumerate(accounts):
             if i > 0:
@@ -572,11 +574,11 @@ def run_dp_mode():
                 # One account's unexpected failure must never kill
                 # the batch: record it and move to the next account.
                 res = {"uid": account["uid"], "name": "",
-                       "ok": False, "skipped": False, "via": "",
+                       "ok": False, "has_dp": False, "via": "",
                        "detail": f"unexpected error: {e}"}
             label = res.get("name") or res["uid"]
-            if res.get("skipped"):
-                skipped += 1
+            if res.get("has_dp"):
+                has_dp += 1
                 print(f"{YELLOW}[DP] {label}: {res['detail']}{WHITE}")
             elif res["ok"]:
                 applied += 1
@@ -586,5 +588,5 @@ def run_dp_mode():
                 failed += 1
                 print(f"{RED}[DP] {label}: FAILED - {res['detail']}"
                       f"{WHITE}")
-    print(f"{CYAN}Done: applied {applied}, skipped {skipped}, "
+    print(f"{CYAN}Done: applied {applied}, already has DP {has_dp}, "
           f"failed {failed}.{WHITE}")
