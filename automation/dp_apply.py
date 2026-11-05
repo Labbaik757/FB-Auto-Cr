@@ -479,10 +479,21 @@ def apply_dp_on_page(page, photo_path):
         except Exception as e:
             return {"ok": False, "detail": f"file attach failed: {e}"}
     _human_pause(1.0, 2.0)
-    # Save / confirm. Prefer the JS Save click: the dialog overlay
+    # Save / confirm. The crop editor renders only after the photo
+    # is processed, so the Save button may not exist yet when the
+    # file attach returns: live 2026-11-05 the editor shows Save
+    # from ~2s, but a single check at ~1s misses it and reports
+    # "save button not found". Poll for up to 20s instead of
+    # checking once. Prefer the JS Save click: the dialog overlay
     # intercepts role clicks, and the dialog can be rendered twice
     # in the DOM, so the last Save button is the live one.
-    if not _js_click_save(page):
+    saved = False
+    for _ in range(40):
+        if _js_click_save(page):
+            saved = True
+            break
+        time.sleep(0.5)
+    if not saved:
         if not _try_click(page, [
             page.get_by_role("button", name="Save", exact=True).first,
             page.get_by_role("button", name="Crop and save").first,
