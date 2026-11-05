@@ -24,7 +24,7 @@ How a picture is picked for one account (correct logic, no guessing):
      folder was already used, the first one is reused and the log
      says so.
   4. Gender unknown + no named picture in either folder -> no
-     picture is picked (the account is skipped honestly). A
+     picture is picked (the account is left as it is). A
      wrong-gender DP is never applied.
 """
 
