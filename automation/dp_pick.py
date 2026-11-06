@@ -9,23 +9,16 @@ photos the user keeps in the project:
         female/    <- photos of women
         README.md
 
-How a picture is picked for one account (correct logic, no guessing):
+How a picture is picked for one account (simple, no guessing):
   1. Gender: read from the profile's About page ("Gender: Female /
-     Male") when it is visible there; otherwise the account's first
-     name is looked up in a small built-in first-name list. If
-     neither works, gender is unknown.
-  2. Name: the display name is read from the profile after login.
-     A file whose name matches the full name (e.g.
-     "Sophia Wilson.jpg") or the first name wins.
-  3. Pick order inside the gender folder: exact full-name match,
-     then first-name match, then any picture not used before. A
-     named match is used even if the file was used before (same
-     person, same picture is correct). If every picture in the
-     folder was already used, the first one is reused and the log
-     says so.
-  4. Gender unknown + no named picture in either folder -> no
-     picture is picked (the account is left as it is). A
-     wrong-gender DP is never applied.
+       Male). That is the only source of gender.
+         2. Take the next unused pic from that gender's folder, one by
+              one in file order. Female ID from the female folder, male
+                   ID from the male folder.
+                     3. A pic is used for ONE ID only — never reused on a different
+                          ID. If gender is unknown, or every pic in the folder is
+                               already used, no pic is picked (add more pics to the folder).
+                                    A wrong-gender DP is never applied. No name matching.
 """
 
 import os
