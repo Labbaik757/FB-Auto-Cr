@@ -454,7 +454,7 @@ def apply_dp_on_page(page, photo_path):
     opened = False
     actions_clicked = _js_click_profile_actions(page)
     if actions_clicked:
-        _human_pause(1.0, 2.0)
+        _human_pause(0.3, 0.7)
         for menu_text in ("Choose profile picture", "Upload Photo",
                           "Update profile picture"):
             if _wait_for_text(page, menu_text, timeout_s=5):
@@ -472,13 +472,13 @@ def apply_dp_on_page(page, photo_path):
                 return {"ok": False,
                         "detail": "profile picture menu did not open"}
             return {"ok": False, "detail": "profile picture actions not found"}
-        _human_pause(1.0, 2.0)
+        _human_pause(0.3, 0.7)
         if not _try_click(page, [
             page.get_by_role("button", name="Upload photo").first,
             page.get_by_role("button", name="Update profile picture").first,
         ]):
             return {"ok": False, "detail": "upload control not found"}
-    _human_pause(1.0, 2.0)
+    _human_pause(0.3, 0.7)
     # Attach the file. The page holds several file inputs; the
     # profile-picture input is the fourth when four are present.
     # Never use the first input blindly: index 0 can set a cover
@@ -508,7 +508,7 @@ def apply_dp_on_page(page, photo_path):
             fc.value.set_files(photo_path, timeout=15000)
         except Exception as e:
             return {"ok": False, "detail": f"file attach failed: {e}"}
-    _human_pause(1.0, 2.0)
+    _human_pause(0.3, 0.7)
     # Save / confirm. The crop editor renders only after the photo
     # is processed, so the Save button may not exist yet when the
     # file attach returns: live 2026-11-05 the editor shows Save
@@ -558,7 +558,7 @@ def password_login(page, uid, password):
             page.get_by_role("button", name="login").first,
             page.locator('button[type="submit"]').first,
         ])
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(1500)
         if "checkpoint" in page.url.lower():
             return "checkpoint"
         return "submitted"
@@ -613,7 +613,7 @@ def process_account(pw, account, headless=False):
                 return {"uid": uid, "name": "", "ok": False,
                         "has_dp": False, "via": via,
                         "detail": "profile page did not load"}
-            _human_pause(1.0, 2.0)
+            _human_pause(0.3, 0.7)
             # Dead cookie: the session is gone (login wall or no
             # c_user). Fall through to the password login below
             # instead of skipping: if a password is in the file
@@ -639,7 +639,7 @@ def process_account(pw, account, headless=False):
                 return {"uid": uid, "name": "", "ok": False,
                         "has_dp": False, "via": via,
                         "detail": "profile page did not load"}
-            _human_pause(1.0, 2.0)
+            _human_pause(0.3, 0.7)
             if not _is_logged_in(page, ctx):
                 return {"uid": uid, "name": "", "ok": False,
                         "has_dp": False, "via": via,
@@ -664,7 +664,7 @@ def process_account(pw, account, headless=False):
             return {"uid": uid, "name": "", "ok": False,
                     "has_dp": False, "via": via,
                     "detail": "profile page did not load"}
-        _human_pause(1.0, 2.0)
+        _human_pause(0.3, 0.7)
         picked = pick_dp(name, gender)
         if not picked:
             if gender:
@@ -697,9 +697,10 @@ def process_account(pw, account, headless=False):
                              f"({os.path.basename(picked['path'])}, "
                              f"{picked['gender'] or 'gender unknown'}, "
                              f"{picked['reason']}, gender via {method})")
-            # Hold the profile open 5s so the user can see the
+            # Hold the profile open 2s so the user can see the
             # new DP before the browser closes and we move on.
-            time.sleep(5)
+            # Fast: 2s, not 5s — the work must be quick.
+            time.sleep(2)
         res["uid"] = uid
         res["name"] = name
         res["via"] = via
