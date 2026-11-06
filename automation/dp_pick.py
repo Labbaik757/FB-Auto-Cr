@@ -11,14 +11,14 @@ photos the user keeps in the project:
 
 How a picture is picked for one account (simple, no guessing):
   1. Gender: read from the profile's About page ("Gender: Female /
-       Male). That is the only source of gender.
-         2. Take the next unused pic from that gender's folder, one by
-              one in file order. Female ID from the female folder, male
-                   ID from the male folder.
-                     3. A pic is used for ONE ID only — never reused on a different
-                          ID. If gender is unknown, or every pic in the folder is
-                               already used, no pic is picked (add more pics to the folder).
-                                    A wrong-gender DP is never applied. No name matching.
+     Male). That is the only source of gender.
+  2. Take the next unused pic from that gender's folder, one by
+     one in file order. Female ID from the female folder, male
+     ID from the male folder.
+  3. A pic is used for ONE ID only — never reused on a different
+     ID. If gender is unknown, or every pic in the folder is
+     already used, no pic is picked (add more pics to the folder).
+     A wrong-gender DP is never applied. No name matching.
 """
 
 import os
