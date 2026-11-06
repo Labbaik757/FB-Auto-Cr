@@ -199,54 +199,19 @@ def record_used(used_path, pic_path):
 def pick_dp(name, gender, used_path=None, pics_dir=None):
     """Pick one picture file for this account.
     Returns {"path", "reason", "gender"} or None (no honest pick).
-    STRICT and country-agnostic: gender comes ONLY from the
-    caller (the account's About page). A pic named for the
-    account always wins, in any country. Otherwise pics are
-    taken one by one from the gender folder (first unused, in
-    file order) — female ID from the female folder, male ID
-    from the male folder. A pic is NEVER reused on a different
-    ID: if every pic in the folder is already used, returns
-    None (add more pics to the folder) instead of duplicating.
-    If gender is unknown and no pic is named for the account,
-    returns None rather than guessing from a name list — names
-    can be from any country, and no list can cover them all."""
+    Simple and strict. Gender comes ONLY from the caller (the
+    account's About page). Take the next unused pic from that
+    gender's folder, one by one in file order. A pic is used
+    for ONE ID only — never reused on a different ID. If
+    gender is unknown, or every pic in the folder is used,
+    returns None. No name matching: the folder + order is
+    enough, names only confuse the tool."""
     base = pics_dir or dp_pics_dir()
-    full = _norm(name)
-    first = full.split(" ")[0] if full else ""
     used = _load_used(used_path or used_file_path())
-    folders = ([gender] if gender in ("male", "female")
-               else ["female", "male"])
-    best = None  # (score, unused, path, reason)
-    for folder in folders:
-        for path in _list_pics(os.path.join(base, folder)):
-            stem = _norm(os.path.splitext(os.path.basename(path))[0])
-            if full and stem == full:
-                score, reason = 3, "name match"
-            elif first and (stem == first or stem.startswith(first + " ")
-                            or (" " + first + " ") in (" " + stem + " ")):
-                score, reason = 2, "first-name match"
-            elif gender:
-                # Fallback: only an UNUSED pic, one by one.
-                # Never duplicate a pic on a different ID: if
-                # this pic was already used, skip it entirely.
-                # If every pic in the folder is used, no pic is
-                # picked (add more pics to the folder instead).
-                if path in used:
-                    continue
-                score, reason = 1, "unused pic"
-            else:
-                # Gender unknown and no name match: do not guess.
-                # Names can be from any country; no list covers
-                # them all, so a wrong-gender pic is worse than
-                # no pic. Skip this pic.
-                continue
-            unused = path not in used
-            key = (score, 1 if unused else 0)
-            if best is None or key > best[0]:
-                best = (key, path, reason, unused)
-    if best is None:
+    if gender not in ("male", "female"):
         return None
-    _, path, reason, unused = best
-    if not unused and reason == "unused pic":
-        reason = "reused pic (all used)"
-    return {"path": path, "reason": reason, "gender": gender}
+    for path in _list_pics(os.path.join(base, gender)):
+        if path in used:
+            continue
+        return {"path": path, "reason": "unused pic", "gender": gender}
+    return None
