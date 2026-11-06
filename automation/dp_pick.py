@@ -11,7 +11,7 @@ photos the user keeps in the project:
 
 How a picture is picked for one account (simple, no guessing):
   1. Gender: read from the profile's About page ("Gender: Female /
-     Male). That is the only source of gender.
+     Male"). That is the only source of gender.
   2. Take the next unused pic from that gender's folder, one by
      one in file order. Female ID from the female folder, male
      ID from the male folder.
