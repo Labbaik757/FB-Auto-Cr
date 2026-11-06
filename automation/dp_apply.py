@@ -648,11 +648,11 @@ def process_account(pw, account, headless=False):
         for _attempt in range(3):
             if _attempt > 0 and has_custom_dp(page):
                 res = {"ok": True,
-                              "detail": "profile picture changed"}
-                                break
-                    res = apply_dp_on_page(page, picked["path"])
-                if res["ok"]:
-                    break
+                       "detail": "profile picture changed"}
+                break
+            res = apply_dp_on_page(page, picked["path"])
+            if res["ok"]:
+                break
         if res["ok"]:
             record_used(used_file_path(), picked["path"])
             res["detail"] = ("profile picture changed "
