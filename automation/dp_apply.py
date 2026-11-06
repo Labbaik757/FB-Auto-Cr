@@ -499,12 +499,14 @@ def apply_dp_on_page(page, photo_path):
             page.get_by_role("button", name="Done").first,
         ]):
             return {"ok": False, "detail": "save button not found"}
-    # Verify: the picture URL must actually change.
-    for _ in range(15):
-        time.sleep(1)
+    # Verify: the picture URL must actually change. Check at
+    # once, then poll fast (0.5s) so the moment the DP lands
+    # the tool knows instantly instead of waiting a fixed time.
+    for _ in range(30):
         after = _pic_src(page)
         if after and after != before:
             return {"ok": True, "detail": "profile picture changed"}
+        time.sleep(0.5)
     return {"ok": False, "detail": "picture did not change after save"}
 
 
@@ -636,16 +638,30 @@ def process_account(pw, account, headless=False):
                           "dp_pics/male/ or dp_pics/female/")
             return {"uid": uid, "name": name, "ok": False,
                     "has_dp": False, "via": via, "detail": detail}
-        res = apply_dp_on_page(page, picked["path"])
+        # Retry in the same session (same page, no re-login and
+        # no re-open of the ID): a transient menu, attach, save
+        # or verify failure can succeed on the next attempt.
+        # If a previous attempt actually applied the DP but the
+        # verify missed it, the pic is already custom, so treat
+        # it as applied instead of uploading again.
+        res = {"ok": False, "detail": "not attempted"}
+        for _attempt in range(3):
+            if _attempt > 0 and has_custom_dp(page):
+                res = {"ok": True,
+                              "detail": "profile picture changed"}
+                                break
+                    res = apply_dp_on_page(page, picked["path"])
+                if res["ok"]:
+                    break
         if res["ok"]:
             record_used(used_file_path(), picked["path"])
             res["detail"] = ("profile picture changed "
                              f"({os.path.basename(picked['path'])}, "
                              f"{picked['gender'] or 'gender unknown'}, "
                              f"{picked['reason']}, gender via {method})")
-# Hold the profile open 5s so the user can see the
-        # new DP before the browser closes and we move on.
-        time.sleep(5)
+            # Hold the profile open 5s so the user can see the
+            # new DP before the browser closes and we move on.
+            time.sleep(5)
         res["uid"] = uid
         res["name"] = name
         res["via"] = via
