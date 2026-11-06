@@ -52,7 +52,14 @@ FEMALE_FIRST_NAMES = {
     "kinsley", "naomi", "elena", "sara", "ariel", "allison",
     "rachel", "lauren", "megan", "nicole", "jessica", "amanda",
     "stephanie", "michelle", "kimberly", "elizabeth", "ashley",
-    "emily", "courtney", "danielle", "brittany", "melissa",
+"emily", "courtney", "danielle", "brittany", "melissa",
+    # Indian first names (female)
+    "priya", "sneha", "anjali", "kavya", "divya", "neha", "pooja",
+    "ritika", "shreya", "tanvi", "ishita", "aisha", "meera",
+    "kavita", "sunita", "geeta", "rekha", "nisha", "rhea",
+    "diya", "sara", "alia", "nitya", "trisha", "aadhya", "myra",
+    "aarohi", "ananya", "ishani", "sana", "laxmi", "radha",
+    "sita", "uma", "vasudha", "lakshmi", "padma", "tara",
 }
 
 MALE_FIRST_NAMES = {
@@ -73,6 +80,13 @@ MALE_FIRST_NAMES = {
     "randy", "vincent", "russell", "elijah", "louis", "bobby",
     "philip", "johnny", "anthony", "andrew", "joshua", "daniel",
     "matthew", "christopher", "william", "christopher", "anthony",
+    # Indian first names (male)
+    "rajesh", "amit", "arjun", "rahul", "vikram", "sanjay",
+    "anil", "sunil", "ravi", "rohan", "kabir", "aarav",
+    "vivaan", "aditya", "arav", "sai", "reyansh", "krishna",
+    "dev", "aryan", "nikhil", "varun", "karan", "manish",
+    "suresh", "ramesh", "mahesh", "dinesh", "harish", "ganesh",
+    "om", "neil", "farhan", "imran", "ahmed", "ali",
 }
 
 
@@ -199,18 +213,21 @@ def record_used(used_path, pic_path):
 def pick_dp(name, gender, used_path=None, pics_dir=None):
     """Pick one picture file for this account.
     Returns {"path", "reason", "gender"} or None (no honest pick).
-    gender "" means unknown: a named picture wins, but if none
-    matches, an unused pic is still taken instead of skipping
-    the image, so an ID that needs a DP always gets one."""
+    STRICT: the pic must match the account's gender. Gender comes
+    from the caller, else from the first name. A pic named for the
+    account always wins. If gender cannot be determined and no pic
+    is named for the account, returns None rather than risking a
+    wrong-gender pic (a male pic on a female ID, or the reverse)."""
     base = pics_dir or dp_pics_dir()
     full = _norm(name)
     first = full.split(" ")[0] if full else ""
     used = _load_used(used_path or used_file_path())
-    folders = []
-    if gender in ("male", "female"):
-        folders = [gender]
-    else:
-        folders = ["female", "male"]
+    # Strict gender: caller first, else the first name. Never
+    # guess across genders.
+    eff_gender = (gender if gender in ("male", "female")
+                  else gender_from_name(name))
+    folders = ([eff_gender] if eff_gender in ("male", "female")
+               else ["female", "male"])
     best = None  # (score, unused, path, reason)
     for folder in folders:
         for path in _list_pics(os.path.join(base, folder)):
@@ -220,13 +237,12 @@ def pick_dp(name, gender, used_path=None, pics_dir=None):
             elif first and (stem == first or stem.startswith(first + " ")
                             or (" " + first + " ") in (" " + stem + " ")):
                 score, reason = 2, "first-name match"
-            elif gender:
+            elif eff_gender:
                 score, reason = 1, "unused pic"
             else:
-                # Unknown gender: a named pic wins (score 3/2
-                # above), but if none matches, still take an
-                # unused pic instead of skipping the image.
-                score, reason = 1, "unused pic"
+                # Gender still unknown and no name match: do not
+                # risk a wrong-gender pic. Skip this pic.
+                continue
             unused = path not in used
             key = (score, 1 if unused else 0)
             if best is None or key > best[0]:
@@ -236,4 +252,4 @@ def pick_dp(name, gender, used_path=None, pics_dir=None):
     _, path, reason, unused = best
     if not unused and reason == "unused pic":
         reason = "reused pic (all used)"
-    return {"path": path, "reason": reason, "gender": gender}
+    return {"path": path, "reason": reason, "gender": eff_gender}
