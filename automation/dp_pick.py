@@ -52,7 +52,7 @@ FEMALE_FIRST_NAMES = {
     "kinsley", "naomi", "elena", "sara", "ariel", "allison",
     "rachel", "lauren", "megan", "nicole", "jessica", "amanda",
     "stephanie", "michelle", "kimberly", "elizabeth", "ashley",
-"emily", "courtney", "danielle", "brittany", "melissa",
+    "emily", "courtney", "danielle", "brittany", "melissa",
     # Indian first names (female)
     "priya", "sneha", "anjali", "kavya", "divya", "neha", "pooja",
     "ritika", "shreya", "tanvi", "ishita", "aisha", "meera",
