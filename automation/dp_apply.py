@@ -313,19 +313,40 @@ def _try_click(page, locators):
 
 
 def _svg_pic_href(page):
-    """Href of the largest visible SVG <image> on the page. Facebook
-    renders the header DP circle as an SVG image, not an <img>.
-    None if no SVG image has a usable href."""
+    """Href of the profile-picture SVG <image>. Facebook renders
+    the header DP circle as an SVG image, not an <img>. The pic
+    lives inside a [aria-label="Profile picture"] container; a
+    bare "largest SVG on the page" is wrong because the cover
+    photo (if an SVG) is larger. None if no usable href."""
     try:
         return page.evaluate("""() => {
+            const inPic = (el) => {
+                let p = el;
+                while (p) {
+                    const a = p.getAttribute && p.getAttribute('aria-label');
+                    if (a === 'Profile picture') return true;
+                    p = p.parentElement;
+                }
+                return false;
+            };
             const imgs = [...document.querySelectorAll('svg image')]
                 .map(e => ({href: e.getAttribute('href')
                             || e.getAttribute('xlink:href') || '',
-                            w: e.getBoundingClientRect().width}))
+                            w: e.getBoundingClientRect().width,
+                            inPic: inPic(e)}))
                 .filter(x => x.href && x.w > 0);
             if (!imgs.length) return null;
-            imgs.sort((a, b) => b.w - a.w);
-            return imgs[0].href;
+            const pic = imgs.find(x => x.inPic);
+            if (pic) return pic.href;
+            // No pic-container SVG: take a profile-pic-sized one
+            // (32-400px). The cover/banner is far larger and
+            // icons are far smaller.
+            const sized = imgs.filter(x => x.w >= 32 && x.w <= 400);
+            if (sized.length) {
+                sized.sort((a, b) => b.w - a.w);
+                return sized[0].href;
+            }
+            return null;
         }""")
     except Exception:
         return None
@@ -473,9 +494,11 @@ def apply_dp_on_page(page, photo_path):
             time.sleep(0.5)
         if inputs.count() >= 4:
             inputs.nth(3).set_input_files(photo_path, timeout=15000)
-        elif inputs.count() > 0:
-            inputs.first.set_input_files(photo_path, timeout=15000)
         else:
+            # Never use the first input: index 0 can set a cover
+            # draft instead of a profile picture. If the fourth
+            # input never appears, the menu did not open right;
+            # fail fast so the retry re-opens it.
             return {"ok": False, "detail": "profile file input not found"}
     except Exception:
         try:
