@@ -199,8 +199,9 @@ def record_used(used_path, pic_path):
 def pick_dp(name, gender, used_path=None, pics_dir=None):
     """Pick one picture file for this account.
     Returns {"path", "reason", "gender"} or None (no honest pick).
-    gender "" means unknown: only a named picture counts, never a
-    random one from either folder."""
+    gender "" means unknown: a named picture wins, but if none
+    matches, an unused pic is still taken instead of skipping
+    the image, so an ID that needs a DP always gets one."""
     base = pics_dir or dp_pics_dir()
     full = _norm(name)
     first = full.split(" ")[0] if full else ""
@@ -222,7 +223,10 @@ def pick_dp(name, gender, used_path=None, pics_dir=None):
             elif gender:
                 score, reason = 1, "unused pic"
             else:
-                continue  # unknown gender: named pics only
+                # Unknown gender: a named pic wins (score 3/2
+                # above), but if none matches, still take an
+                # unused pic instead of skipping the image.
+                score, reason = 1, "unused pic"
             unused = path not in used
             key = (score, 1 if unused else 0)
             if best is None or key > best[0]:

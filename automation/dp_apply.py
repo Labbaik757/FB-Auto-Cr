@@ -153,6 +153,11 @@ def _plausible_name(text, candidate_names=()):
         return ""
     if _norm(text) in candidate_names:
         return text
+    # A notification-count title ("(4) Facebook") is never a
+    # person's name: reject any text starting with "(digits)".
+    import re as _re
+    if _re.match(r"^\(\d+\)", text):
+        return ""
     low = text.lower()
     if low in _NAME_STOPLIST:
         return ""
@@ -431,7 +436,7 @@ def apply_dp_on_page(page, photo_path):
         _human_pause(1.0, 2.0)
         for menu_text in ("Choose profile picture", "Upload Photo",
                           "Update profile picture"):
-            if _wait_for_text(page, menu_text, timeout_s=10):
+            if _wait_for_text(page, menu_text, timeout_s=5):
                 opened = _js_click_by_text(page, menu_text)
                 if opened:
                     break
@@ -459,7 +464,10 @@ def apply_dp_on_page(page, photo_path):
     # draft instead of a profile picture.
     try:
         inputs = page.locator('input[type="file"]')
-        for _ in range(120):
+        # Fail fast (10s): if the inputs never appear the menu
+        # did not open right, and a slow poll here is what
+        # leaves one ID stuck for a minute.
+        for _ in range(20):
             if inputs.count() >= 4:
                 break
             time.sleep(0.5)
@@ -583,10 +591,17 @@ def process_account(pw, account, headless=False):
                         "has_dp": False, "via": via,
                         "detail": "profile page did not load"}
             _human_pause(1.0, 2.0)
+            # Dead cookie: the session is gone (login wall or no
+            # c_user). Fall through to the password login below
+            # instead of skipping: if a password is in the file
+            # the ID opens with uid+password and the tool moves on.
+            if not _is_logged_in(page, ctx):
+                logged_in = False
         if not logged_in:
-            # Cookie login failed. Password fallback only when a
-            # password is actually in the file - with none (uid ||
-            # cookie lines) a password attempt can never work.
+            # Cookie login failed or the cookie is dead. Fall back
+            # to uid+password and move on. Password fallback only
+            # when a password is actually in the file - with none
+            # (uid || cookie lines) a password attempt can never work.
             if not account.get("password"):
                 return {"uid": uid, "name": "", "ok": False,
                         "has_dp": False, "via": via,
@@ -645,7 +660,7 @@ def process_account(pw, account, headless=False):
         # verify missed it, the pic is already custom, so treat
         # it as applied instead of uploading again.
         res = {"ok": False, "detail": "not attempted"}
-        for _attempt in range(3):
+        for _attempt in range(2):
             if _attempt > 0 and has_custom_dp(page):
                 res = {"ok": True,
                        "detail": "profile picture changed"}
@@ -697,4 +712,9 @@ def run_dp_mode():
                        "detail": f"unexpected error: {e}"}
             label = res.get("name") or res["uid"]
             if res.get("ok") and not res.get("has_dp"):
-                print(f"{GREEN}[DP] {label}: applied{WHITE}")
+                print(f"{GREEN}[DP] {label}: done{WHITE}")
+            elif res.get("has_dp"):
+                print(f"{CYAN}[DP] {label}: already has DP, skipped{WHITE}")
+            else:
+                print(f"{WHITE}[DP] {label}: failed - "
+                      f"{res.get('detail', '')}{WHITE}")
