@@ -201,10 +201,15 @@ def pick_dp(name, gender, used_path=None, pics_dir=None):
     Returns {"path", "reason", "gender"} or None (no honest pick).
     STRICT and country-agnostic: gender comes ONLY from the
     caller (the account's About page). A pic named for the
-    account always wins, in any country. If gender is unknown
-    and no pic is named for the account, returns None rather
-    than guessing from a name list — names can be from any
-    country, and no list can cover them all."""
+    account always wins, in any country. Otherwise pics are
+    taken one by one from the gender folder (first unused, in
+    file order) — female ID from the female folder, male ID
+    from the male folder. A pic is NEVER reused on a different
+    ID: if every pic in the folder is already used, returns
+    None (add more pics to the folder) instead of duplicating.
+    If gender is unknown and no pic is named for the account,
+    returns None rather than guessing from a name list — names
+    can be from any country, and no list can cover them all."""
     base = pics_dir or dp_pics_dir()
     full = _norm(name)
     first = full.split(" ")[0] if full else ""
@@ -221,6 +226,13 @@ def pick_dp(name, gender, used_path=None, pics_dir=None):
                             or (" " + first + " ") in (" " + stem + " ")):
                 score, reason = 2, "first-name match"
             elif gender:
+                # Fallback: only an UNUSED pic, one by one.
+                # Never duplicate a pic on a different ID: if
+                # this pic was already used, skip it entirely.
+                # If every pic in the folder is used, no pic is
+                # picked (add more pics to the folder instead).
+                if path in used:
+                    continue
                 score, reason = 1, "unused pic"
             else:
                 # Gender unknown and no name match: do not guess.
