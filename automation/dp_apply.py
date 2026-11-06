@@ -668,8 +668,9 @@ def run_dp_mode():
         return
     gap = 60
     with sync_playwright() as pw:
+        prev_skipped = False
         for i, account in enumerate(accounts):
-            if i > 0:
+            if i > 0 and not prev_skipped:
                 time.sleep(gap)
             try:
                 res = process_account(pw, account, headless=False)
@@ -682,3 +683,7 @@ def run_dp_mode():
             label = res.get("name") or res["uid"]
             if res.get("ok") and not res.get("has_dp"):
                 print(f"{GREEN}[DP] {label}: applied{WHITE}")
+            # An account that already has a DP is an instant skip:
+            # no wait before the next account. Only a real apply
+            # (or a failure) keeps the gap.
+            prev_skipped = bool(res.get("has_dp"))
