@@ -54,7 +54,6 @@ FEMALE_FIRST_NAMES = {
     "stephanie", "michelle", "kimberly", "elizabeth", "ashley",
     "emily", "courtney", "danielle", "brittany", "melissa",
 }
-    
 
 MALE_FIRST_NAMES = {
     "joseph", "sean", "michael", "erik", "jonathan", "robert",
